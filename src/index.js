@@ -7,10 +7,10 @@ import http from 'http';
 const app = express();
 const server = http.createServer(app);
 
-// 1. FORCE WEBSOCKETS (Fixes iOS connection drops)
+// 1. FORCE WEBSOCKETS
 const io = new Server(server, {
     transports: ["websocket"], 
-    maxHttpBufferSize: 1e8, // Allow large chunks
+    maxHttpBufferSize: 1e8, 
     pingTimeout: 60000
 });
 
@@ -23,55 +23,31 @@ const html = `
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Pro Stream Relay</title>
+    <title>Stream Relay Debug</title>
     <script src="/socket.io/socket.io.js"></script>
     <style>
         body { margin: 0; background: #000; overflow: hidden; height: 100vh; width: 100vw; font-family: sans-serif; }
-        
-        /* VIDEO LAYER */
         video { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
-
-        /* STATUS BAR */
         #status-bar { position: absolute; top: 0; left: 0; width: 100%; display: flex; justify-content: center; padding-top: 5px; z-index: 50; pointer-events: none; }
         .badge { background: rgba(0,0,0,0.6); color: #888; border: 1px solid #444; padding: 5px 15px; border-radius: 20px; font-size: 12px; font-weight: bold; display: flex; align-items: center; gap: 8px; }
         .dot { width: 8px; height: 8px; border-radius: 50%; background: #555; }
         .badge.live { color: #fff; border-color: #f00; background: rgba(200,0,0,0.5); }
         .badge.live .dot { background: #f00; box-shadow: 0 0 8px #f00; }
-
-        /* OVERLAYS */
-        .overlay-box { 
-            position: absolute; background: #222; border: 1px solid #444; 
-            z-index: 100; overflow: hidden; display: none; flex-direction: column; 
-            box-shadow: 0 4px 10px rgba(0,0,0,0.5); 
-            transition: width 0.2s, height 0.2s, opacity 0.2s;
-        }
-        
-        /* HEADER / DRAG HANDLE */
-        .drag-handle { 
-            width: 100%; height: 28px; background: rgba(0,0,0,0.85); 
-            cursor: move; display: flex; align-items: center; justify-content: space-between; 
-            padding: 0 5px; box-sizing: border-box;
-        }
+        .overlay-box { position: absolute; background: #222; border: 1px solid #444; z-index: 100; overflow: hidden; display: none; flex-direction: column; box-shadow: 0 4px 10px rgba(0,0,0,0.5); transition: width 0.2s, height 0.2s, opacity 0.2s; }
+        .drag-handle { width: 100%; height: 28px; background: rgba(0,0,0,0.85); cursor: move; display: flex; align-items: center; justify-content: space-between; padding: 0 5px; box-sizing: border-box; }
         .handle-title { color: #aaa; font-size: 10px; font-weight: bold; text-transform: uppercase; letter-spacing: 1px; }
         .win-ctrls { display: flex; gap: 5px; }
         .win-btn { width: 12px; height: 12px; border-radius: 50%; border: none; cursor: pointer; }
         .btn-min { background: #fc0; }
         .btn-max { background: #0f0; }
         .btn-close { background: #f00; }
-
         iframe { flex-grow: 1; border: none; width: 100%; background: #000; }
-
-        /* Default Sizes */
         #watch-box { top: 60px; right: 10px; width: 45vw; height: 30vh; }
         #chat-box { bottom: 90px; left: 10px; width: 45vw; height: 40vh; border: 1px solid #0f0; }
-
-        /* SETUP SCREEN */
         #setup { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.92); z-index: 300; display: flex; flex-direction: column; align-items: center; justify-content: center; color: white; }
         input { padding: 12px; margin: 8px; font-size: 16px; width: 80%; max-width: 300px; border-radius: 5px; border: none; }
         label { color: #aaa; font-size: 12px; margin-top: 15px; }
         button.start-btn { margin-top: 20px; padding: 15px 40px; font-size: 18px; background: #0f0; border: none; font-weight: bold; border-radius: 5px; }
-
-        /* BOTTOM CONTROLS */
         #controls { position: absolute; bottom: 20px; width: 100%; display: flex; justify-content: center; gap: 10px; z-index: 200; pointer-events: none; }
         .ctrl { pointer-events: auto; background: rgba(0,0,0,0.6); color: white; padding: 8px 12px; border-radius: 15px; border: 1px solid #666; font-size: 12px; text-transform: uppercase; }
         .ctrl:active { background: #fff; color: #000; }
@@ -79,7 +55,6 @@ const html = `
 </head>
 <body>
     <video autoplay playsinline muted></video>
-    
     <div id="status-bar"><div class="badge" id="live-badge"><div class="dot"></div> <span id="status-text">READY</span></div></div>
 
     <div id="setup">
@@ -120,11 +95,9 @@ const html = `
     </div>
 
     <script>
-        // A. FORCE WEBSOCKET ON CLIENT
         const socket = io({ transports: ["websocket"] });
         let mediaRecorder;
         
-        // B. SMART MIME SELECTION
         function pickMimeType() {
             const candidates = [
                 "video/mp4",
@@ -149,9 +122,10 @@ const html = `
         initCam();
 
         function startApp() {
-            const key = document.getElementById('streamKey').value;
-            const myUser = document.getElementById('myUser').value;
-            const watchUser = document.getElementById('watchUser').value;
+            // FIX: Trim spaces from inputs!
+            const key = document.getElementById('streamKey').value.trim();
+            const myUser = document.getElementById('myUser').value.trim();
+            const watchUser = document.getElementById('watchUser').value.trim();
 
             if (watchUser) {
                 document.getElementById('watch-frame').src = 'https://chaturbate.com/embed/' + watchUser + '?bgcolor=black';
@@ -162,7 +136,6 @@ const html = `
                 document.getElementById('chat-box').style.display = 'flex';
             }
             document.getElementById('setup').style.display = 'none';
-
             if (key) startBroadcasting(key);
         }
 
@@ -171,20 +144,15 @@ const html = `
             const badge = document.getElementById('live-badge');
             statusText.innerText = "INITIALIZING...";
 
-            // 1. Create Recorder
             let mime = pickMimeType();
-            console.log("Selected MIME:", mime);
             
             try {
-                // If mime is empty, let browser decide (safest for Safari 17+)
                 mediaRecorder = mime ? new MediaRecorder(window.localStream, { mimeType: mime }) : new MediaRecorder(window.localStream);
             } catch (e) {
                 alert("Recorder Create Failed: " + e.message);
                 return;
             }
 
-            // 2. Wait for Server ACK before starting
-            // This prevents sending data before FFmpeg is ready
             socket.emit('config', { 
                 rtmp: 'rtmp://live.chaturbate.com/live/' + key,
                 format: mime 
@@ -194,13 +162,11 @@ const html = `
                     return;
                 }
                 
-                // Server is ready! Start recording
-                mediaRecorder.start(200); // Small chunks for low latency
+                mediaRecorder.start(250); // 250ms chunks
                 badge.classList.add('live');
                 statusText.innerText = "LIVE (ON AIR)";
             });
 
-            // 3. Send ArrayBuffer (Binary)
             mediaRecorder.ondataavailable = async (e) => {
                 if (e.data.size > 0) {
                     const buffer = await e.data.arrayBuffer();
@@ -209,7 +175,6 @@ const html = `
             };
         }
 
-        // --- UI UTILITIES ---
         function toggleCam() {
             const v = document.querySelector('video');
             v.style.transform = v.style.transform === 'scaleX(1)' ? 'scaleX(-1)' : 'scaleX(1)';
@@ -229,7 +194,6 @@ const html = `
             document.querySelectorAll('.overlay-box').forEach(el => el.style.opacity = val);
         }
 
-        // Drag Logic
         document.querySelectorAll('.drag-handle').forEach(handle => {
             handle.addEventListener('touchmove', (e) => {
                 e.preventDefault();
@@ -249,7 +213,7 @@ app.get('/', (req, res) => res.send(html));
 
 io.on('connection', (socket) => {
     let ffmpeg;
-    let streamQueue = []; // D. QUEUE EARLY CHUNKS
+    let streamQueue = []; 
     let isReady = false;
 
     socket.on('config', (data, ack) => {
@@ -257,52 +221,47 @@ io.on('connection', (socket) => {
         
         console.log('Spawning FFmpeg. Target:', data.rtmp, 'Mime:', data.format);
 
-        // Determine format flags
-        const isMP4 = data.format && data.format.includes('mp4');
-        const inputFormat = isMP4 ? '-f mp4' : ''; 
-
         const args = [
-            '-re',
-            '-i', '-',                 // Input from Stdin
-            '-c:v', 'libx264',         // Video Encoder
-            '-preset', 'ultrafast',    // Speed
-            '-tune', 'zerolatency',    // Latency
-            '-r', '30',                // 30 FPS
-            '-g', '60',                // Keyframe interval
-            '-c:a', 'aac',             // Audio Encoder
+            '-i', '-',
+            '-c:v', 'libx264',
+            '-profile:v', 'baseline',  // FIX: Maximum compatibility
+            '-level', '3.0',           // FIX: Maximum compatibility
+            '-preset', 'ultrafast',
+            '-tune', 'zerolatency',
+            '-r', '30',
+            '-g', '60',
+            '-c:a', 'aac',
+            '-strict', '-2',           // FIX: Ensure AAC audio works
             '-ar', '44100',
             '-b:a', '128k',
-            '-f', 'flv',               // RTMP Output
+            '-f', 'flv',
             data.rtmp
         ];
 
-        // Some versions of ffmpeg need input flags before -i
-        // We will try standard auto-detection first, but map input logs
         try {
             ffmpeg = spawn(ffmpegPath, args);
             
-            // C. CONFIRM READY
-            isReady = true;
-            if (ack) ack({ ok: true });
-            
-            // Flush any queued packets
-            while(streamQueue.length > 0) {
-                const chunk = streamQueue.shift();
-                if (ffmpeg.stdin.writable) ffmpeg.stdin.write(chunk);
-            }
-
-            ffmpeg.stderr.on('data', (d) => {
-                // Log only important stuff to keep Render logs clean
-                const msg = d.toString();
-                if (msg.includes('Input #0') || msg.includes('frame=')) {
-                     console.log('FFmpeg:', msg.substring(0, 80));
-                }
+            ffmpeg.stdin.on('error', (e) => {
+                console.log('FFmpeg Stdin Error:', e.code);
             });
-            
+
             ffmpeg.on('close', (c) => {
                 console.log('FFmpeg exited:', c);
                 isReady = false;
             });
+
+            // FIX: Show ALL logs so we can see why it crashes
+            ffmpeg.stderr.on('data', (d) => {
+                console.log(d.toString());
+            });
+
+            isReady = true;
+            if (ack) ack({ ok: true });
+            
+            while(streamQueue.length > 0) {
+                const chunk = streamQueue.shift();
+                if (ffmpeg.stdin.writable) ffmpeg.stdin.write(chunk);
+            }
 
         } catch (e) {
             console.error("Spawn Error:", e);
@@ -311,13 +270,10 @@ io.on('connection', (socket) => {
     });
 
     socket.on('binarystream', (data) => {
-        // Convert ArrayBuffer to Node Buffer
         const buffer = Buffer.from(data);
-
         if (isReady && ffmpeg && ffmpeg.stdin.writable) {
             ffmpeg.stdin.write(buffer);
         } else {
-            // Buffer data if FFmpeg isn't ready yet (prevents header loss)
             streamQueue.push(buffer);
         }
     });
@@ -327,4 +283,4 @@ io.on('connection', (socket) => {
     });
 });
 
-server.listen(port, () => console.log('Pro Relay running on port ' + port));
+server.listen(port, () => console.log('Relay Debug running on ' + port));
