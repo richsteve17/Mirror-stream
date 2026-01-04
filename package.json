@@ -1,0 +1,13 @@
+{
+  "name": "mirror-stream",
+  "version": "1.0.0",
+  "description": "Cam mirroring + watch other performers for Chaturbate & StripChat mobile streaming",
+  "type": "module",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2"
+  }
+}
