@@ -6,61 +6,136 @@ import http from 'http';
 
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server);
+
+// 1. FORCE WEBSOCKETS (Fixes iOS connection drops)
+const io = new Server(server, {
+    transports: ["websocket"], 
+    maxHttpBufferSize: 1e8, // Allow large chunks
+    pingTimeout: 60000
+});
+
 const port = process.env.PORT || 3000;
 
-// --- FRONTEND (THE UI) ---
+// --- FRONTEND ---
 const html = `
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Stream Deck Relay</title>
+    <title>Pro Stream Relay</title>
     <script src="/socket.io/socket.io.js"></script>
     <style>
         body { margin: 0; background: #000; overflow: hidden; height: 100vh; width: 100vw; font-family: sans-serif; }
+        
+        /* VIDEO LAYER */
         video { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
-        #status-bar { position: absolute; top: 0; left: 0; width: 100%; display: flex; justify-content: center; padding-top: 5px; z-index: 50; }
+
+        /* STATUS BAR */
+        #status-bar { position: absolute; top: 0; left: 0; width: 100%; display: flex; justify-content: center; padding-top: 5px; z-index: 50; pointer-events: none; }
         .badge { background: rgba(0,0,0,0.6); color: #888; border: 1px solid #444; padding: 5px 15px; border-radius: 20px; font-size: 12px; font-weight: bold; display: flex; align-items: center; gap: 8px; }
         .dot { width: 8px; height: 8px; border-radius: 50%; background: #555; }
-        .badge.live { color: #fff; border-color: #f00; background: rgba(200,0,0,0.3); }
+        .badge.live { color: #fff; border-color: #f00; background: rgba(200,0,0,0.5); }
         .badge.live .dot { background: #f00; box-shadow: 0 0 8px #f00; }
-        .overlay-box { position: absolute; background: #222; border: 1px solid #444; z-index: 100; overflow: hidden; display: none; flex-direction: column; box-shadow: 0 4px 10px rgba(0,0,0,0.5); }
-        .drag-handle { width: 100%; height: 25px; background: rgba(0,0,0,0.8); cursor: move; display: flex; align-items: center; justify-content: center; color: #aaa; font-size: 10px; letter-spacing: 1px; text-transform: uppercase; }
-        iframe { flex-grow: 1; border: none; width: 100%; }
-        #watch-box { top: 50px; right: 10px; width: 40vw; height: 25vh; }
-        #chat-box { bottom: 80px; left: 10px; width: 45vw; height: 40vh; border: 1px solid #0f0; }
+
+        /* OVERLAYS */
+        .overlay-box { 
+            position: absolute; background: #222; border: 1px solid #444; 
+            z-index: 100; overflow: hidden; display: none; flex-direction: column; 
+            box-shadow: 0 4px 10px rgba(0,0,0,0.5); 
+            transition: width 0.2s, height 0.2s, opacity 0.2s;
+        }
+        
+        /* HEADER / DRAG HANDLE */
+        .drag-handle { 
+            width: 100%; height: 28px; background: rgba(0,0,0,0.85); 
+            cursor: move; display: flex; align-items: center; justify-content: space-between; 
+            padding: 0 5px; box-sizing: border-box;
+        }
+        .handle-title { color: #aaa; font-size: 10px; font-weight: bold; text-transform: uppercase; letter-spacing: 1px; }
+        .win-ctrls { display: flex; gap: 5px; }
+        .win-btn { width: 12px; height: 12px; border-radius: 50%; border: none; cursor: pointer; }
+        .btn-min { background: #fc0; }
+        .btn-max { background: #0f0; }
+        .btn-close { background: #f00; }
+
+        iframe { flex-grow: 1; border: none; width: 100%; background: #000; }
+
+        /* Default Sizes */
+        #watch-box { top: 60px; right: 10px; width: 45vw; height: 30vh; }
+        #chat-box { bottom: 90px; left: 10px; width: 45vw; height: 40vh; border: 1px solid #0f0; }
+
+        /* SETUP SCREEN */
         #setup { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.92); z-index: 300; display: flex; flex-direction: column; align-items: center; justify-content: center; color: white; }
         input { padding: 12px; margin: 8px; font-size: 16px; width: 80%; max-width: 300px; border-radius: 5px; border: none; }
-        label { color: #aaa; font-size: 12px; margin-top: 15px; align-self: center; }
+        label { color: #aaa; font-size: 12px; margin-top: 15px; }
         button.start-btn { margin-top: 20px; padding: 15px 40px; font-size: 18px; background: #0f0; border: none; font-weight: bold; border-radius: 5px; }
+
+        /* BOTTOM CONTROLS */
         #controls { position: absolute; bottom: 20px; width: 100%; display: flex; justify-content: center; gap: 10px; z-index: 200; pointer-events: none; }
-        .ctrl { pointer-events: auto; background: rgba(0,0,0,0.6); color: white; padding: 8px 12px; border-radius: 15px; border: 1px solid #666; font-size: 12px;}
+        .ctrl { pointer-events: auto; background: rgba(0,0,0,0.6); color: white; padding: 8px 12px; border-radius: 15px; border: 1px solid #666; font-size: 12px; text-transform: uppercase; }
+        .ctrl:active { background: #fff; color: #000; }
     </style>
 </head>
 <body>
     <video autoplay playsinline muted></video>
-    <div id="status-bar"><div class="badge" id="live-badge"><div class="dot"></div> <span id="status-text">OFFLINE</span></div></div>
+    
+    <div id="status-bar"><div class="badge" id="live-badge"><div class="dot"></div> <span id="status-text">READY</span></div></div>
+
     <div id="setup">
         <h2>Stream Setup</h2>
-        <label>STREAM KEY</label><input id="streamKey" placeholder="e.g. 8s9d-sd89-s8d9...">
-        <label>YOUR USERNAME</label><input id="myUser" placeholder="Your Username">
-        <label>WATCH USER</label><input id="watchUser" placeholder="Other Username">
+        <label>STREAM KEY</label><input id="streamKey" placeholder="Paste Key Here">
+        <label>CHAT USERNAME</label><input id="myUser" placeholder="Your Username">
+        <label>WATCH USERNAME</label><input id="watchUser" placeholder="Other Performer">
         <button class="start-btn" onclick="startApp()">GO LIVE</button>
     </div>
-    <div id="watch-box" class="overlay-box"><div class="drag-handle" data-target="watch-box">::: WATCH :::</div><iframe id="watch-frame"></iframe></div>
-    <div id="chat-box" class="overlay-box"><div class="drag-handle" data-target="chat-box">::: MY CHAT :::</div><iframe id="chat-frame"></iframe></div>
+
+    <div id="watch-box" class="overlay-box">
+        <div class="drag-handle" data-target="watch-box">
+            <span class="handle-title">Monitor</span>
+            <div class="win-ctrls">
+                <button class="win-btn btn-min" onclick="resizeBox('watch-box', 'small')"></button>
+                <button class="win-btn btn-max" onclick="resizeBox('watch-box', 'large')"></button>
+                <button class="win-btn btn-close" onclick="closeBox('watch-box')"></button>
+            </div>
+        </div>
+        <iframe id="watch-frame"></iframe>
+    </div>
+
+    <div id="chat-box" class="overlay-box">
+        <div class="drag-handle" data-target="chat-box">
+            <span class="handle-title">My Chat</span>
+            <div class="win-ctrls">
+                <button class="win-btn btn-min" onclick="resizeBox('chat-box', 'small')"></button>
+                <button class="win-btn btn-max" onclick="resizeBox('chat-box', 'large')"></button>
+            </div>
+        </div>
+        <iframe id="chat-frame"></iframe>
+    </div>
+
     <div id="controls">
-        <button class="ctrl" onclick="toggleCam()">Flip</button>
-        <button class="ctrl" onclick="toggleSize('watch-box')">Size Watch</button>
-        <button class="ctrl" onclick="toggleSize('chat-box')">Size Chat</button>
+        <button class="ctrl" onclick="toggleCam()">Flip Cam</button>
+        <button class="ctrl" onclick="toggleOpacity()">Ghost Mode</button>
         <button class="ctrl" onclick="location.reload()">Reset</button>
     </div>
+
     <script>
-        const socket = io();
+        // A. FORCE WEBSOCKET ON CLIENT
+        const socket = io({ transports: ["websocket"] });
         let mediaRecorder;
         
+        // B. SMART MIME SELECTION
+        function pickMimeType() {
+            const candidates = [
+                "video/mp4",
+                'video/mp4;codecs="avc1.42E01E,mp4a.40.2"',
+                "video/webm;codecs=h264",
+                "video/webm;codecs=vp8,opus",
+                "video/webm"
+            ];
+            return candidates.find(t => MediaRecorder.isTypeSupported(t)) || "";
+        }
+
         async function initCam() {
             try {
                 const stream = await navigator.mediaDevices.getUserMedia({ 
@@ -88,58 +163,73 @@ const html = `
             }
             document.getElementById('setup').style.display = 'none';
 
-            if (key) {
-                startBroadcasting(key);
-            }
+            if (key) startBroadcasting(key);
         }
 
         function startBroadcasting(key) {
             const statusText = document.getElementById('status-text');
             const badge = document.getElementById('live-badge');
-            
-            statusText.innerText = "CONNECTING...";
-            
-            let options = { mimeType: 'video/webm;codecs=h264' };
-            if (!MediaRecorder.isTypeSupported(options.mimeType)) {
-                options = { mimeType: 'video/mp4' };
-            }
+            statusText.innerText = "INITIALIZING...";
 
+            // 1. Create Recorder
+            let mime = pickMimeType();
+            console.log("Selected MIME:", mime);
+            
             try {
-                mediaRecorder = new MediaRecorder(window.localStream, options);
+                // If mime is empty, let browser decide (safest for Safari 17+)
+                mediaRecorder = mime ? new MediaRecorder(window.localStream, { mimeType: mime }) : new MediaRecorder(window.localStream);
             } catch (e) {
-                alert("Recorder Error: " + e.message);
+                alert("Recorder Create Failed: " + e.message);
                 return;
             }
 
+            // 2. Wait for Server ACK before starting
+            // This prevents sending data before FFmpeg is ready
             socket.emit('config', { 
                 rtmp: 'rtmp://live.chaturbate.com/live/' + key,
-                format: options.mimeType 
+                format: mime 
+            }, (response) => {
+                if (!response || !response.ok) {
+                    alert("Server failed to spawn FFmpeg");
+                    return;
+                }
+                
+                // Server is ready! Start recording
+                mediaRecorder.start(200); // Small chunks for low latency
+                badge.classList.add('live');
+                statusText.innerText = "LIVE (ON AIR)";
             });
 
-            mediaRecorder.ondataavailable = (e) => {
-                if(e.data.size > 0) socket.emit('binarystream', e.data);
+            // 3. Send ArrayBuffer (Binary)
+            mediaRecorder.ondataavailable = async (e) => {
+                if (e.data.size > 0) {
+                    const buffer = await e.data.arrayBuffer();
+                    socket.emit('binarystream', buffer);
+                }
             };
-
-            mediaRecorder.start(250); 
-            
-            badge.classList.add('live');
-            statusText.innerText = "LIVE (SENDING)";
         }
 
+        // --- UI UTILITIES ---
         function toggleCam() {
             const v = document.querySelector('video');
             v.style.transform = v.style.transform === 'scaleX(1)' ? 'scaleX(-1)' : 'scaleX(1)';
         }
 
-        const sizes = ['30%', '50%', '90%'];
-        let sizeIdx = 0;
-        function toggleSize(id) {
+        function resizeBox(id, size) {
             const el = document.getElementById(id);
-            sizeIdx = (sizeIdx + 1) % sizes.length;
-            el.style.width = sizes[sizeIdx];
-            el.style.height = (id === 'chat-box') ? '50vh' : 'auto';
+            if(size === 'small') { el.style.width = '150px'; el.style.height = '120px'; }
+            if(size === 'large') { el.style.width = '90vw'; el.style.height = '60vh'; }
+        }
+        function closeBox(id) { document.getElementById(id).style.display = 'none'; }
+        
+        let ghost = false;
+        function toggleOpacity() {
+            ghost = !ghost;
+            const val = ghost ? '0.3' : '1';
+            document.querySelectorAll('.overlay-box').forEach(el => el.style.opacity = val);
         }
 
+        // Drag Logic
         document.querySelectorAll('.drag-handle').forEach(handle => {
             handle.addEventListener('touchmove', (e) => {
                 e.preventDefault();
@@ -154,44 +244,81 @@ const html = `
 </html>
 `;
 
-// --- BACKEND (FFMPEG RELAY) ---
+// --- BACKEND ---
 app.get('/', (req, res) => res.send(html));
 
 io.on('connection', (socket) => {
     let ffmpeg;
+    let streamQueue = []; // D. QUEUE EARLY CHUNKS
+    let isReady = false;
 
-    socket.on('config', (data) => {
+    socket.on('config', (data, ack) => {
         if (ffmpeg) ffmpeg.kill();
         
-        // --- THIS LINE WAS THE PROBLEM ---
-        console.log('Stream Starting. Target:', data.rtmp, 'Input Format:', data.format);
-        // ---------------------------------
+        console.log('Spawning FFmpeg. Target:', data.rtmp, 'Mime:', data.format);
 
+        // Determine format flags
         const isMP4 = data.format && data.format.includes('mp4');
+        const inputFormat = isMP4 ? '-f mp4' : ''; 
 
         const args = [
-            '-i', '-',
-            '-c:v', 'libx264',
-            '-preset', 'ultrafast',
-            '-tune', 'zerolatency',
-            '-r', '30',
-            '-g', '60',
-            '-c:a', 'aac',
+            '-re',
+            '-i', '-',                 // Input from Stdin
+            '-c:v', 'libx264',         // Video Encoder
+            '-preset', 'ultrafast',    // Speed
+            '-tune', 'zerolatency',    // Latency
+            '-r', '30',                // 30 FPS
+            '-g', '60',                // Keyframe interval
+            '-c:a', 'aac',             // Audio Encoder
             '-ar', '44100',
             '-b:a', '128k',
-            '-f', 'flv',
+            '-f', 'flv',               // RTMP Output
             data.rtmp
         ];
-        
-        ffmpeg = spawn(ffmpegPath, args);
 
-        ffmpeg.stderr.on('data', (d) => console.log('FFmpeg Log:', d.toString().substring(0, 100)));
-        ffmpeg.on('close', (c) => console.log('FFmpeg stopped, code:', c));
+        // Some versions of ffmpeg need input flags before -i
+        // We will try standard auto-detection first, but map input logs
+        try {
+            ffmpeg = spawn(ffmpegPath, args);
+            
+            // C. CONFIRM READY
+            isReady = true;
+            if (ack) ack({ ok: true });
+            
+            // Flush any queued packets
+            while(streamQueue.length > 0) {
+                const chunk = streamQueue.shift();
+                if (ffmpeg.stdin.writable) ffmpeg.stdin.write(chunk);
+            }
+
+            ffmpeg.stderr.on('data', (d) => {
+                // Log only important stuff to keep Render logs clean
+                const msg = d.toString();
+                if (msg.includes('Input #0') || msg.includes('frame=')) {
+                     console.log('FFmpeg:', msg.substring(0, 80));
+                }
+            });
+            
+            ffmpeg.on('close', (c) => {
+                console.log('FFmpeg exited:', c);
+                isReady = false;
+            });
+
+        } catch (e) {
+            console.error("Spawn Error:", e);
+            if(ack) ack({ ok: false });
+        }
     });
 
     socket.on('binarystream', (data) => {
-        if (ffmpeg && ffmpeg.stdin.writable) {
-            ffmpeg.stdin.write(data);
+        // Convert ArrayBuffer to Node Buffer
+        const buffer = Buffer.from(data);
+
+        if (isReady && ffmpeg && ffmpeg.stdin.writable) {
+            ffmpeg.stdin.write(buffer);
+        } else {
+            // Buffer data if FFmpeg isn't ready yet (prevents header loss)
+            streamQueue.push(buffer);
         }
     });
 
@@ -200,4 +327,4 @@ io.on('connection', (socket) => {
     });
 });
 
-server.listen(port, () => console.log('Server running on port ' + port));
+server.listen(port, () => console.log('Pro Relay running on port ' + port));
