@@ -23,17 +23,31 @@ const html = `
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Stream Relay Debug</title>
+    <title>Stream Relay Landscape</title>
     <script src="/socket.io/socket.io.js"></script>
     <style>
         body { margin: 0; background: #000; overflow: hidden; height: 100vh; width: 100vw; font-family: sans-serif; }
+        
+        /* ROTATION WARNING */
+        #rotate-msg {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: #000; z-index: 9999; display: none;
+            flex-direction: column; align-items: center; justify-content: center;
+            color: white; text-align: center;
+        }
+        
+        /* VIDEO LAYER */
         video { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
+
+        /* STATUS BAR */
         #status-bar { position: absolute; top: 0; left: 0; width: 100%; display: flex; justify-content: center; padding-top: 5px; z-index: 50; pointer-events: none; }
         .badge { background: rgba(0,0,0,0.6); color: #888; border: 1px solid #444; padding: 5px 15px; border-radius: 20px; font-size: 12px; font-weight: bold; display: flex; align-items: center; gap: 8px; }
         .dot { width: 8px; height: 8px; border-radius: 50%; background: #555; }
         .badge.live { color: #fff; border-color: #f00; background: rgba(200,0,0,0.5); }
         .badge.live .dot { background: #f00; box-shadow: 0 0 8px #f00; }
-        .overlay-box { position: absolute; background: #222; border: 1px solid #444; z-index: 100; overflow: hidden; display: none; flex-direction: column; box-shadow: 0 4px 10px rgba(0,0,0,0.5); transition: width 0.2s, height 0.2s, opacity 0.2s; }
+
+        /* OVERLAYS */
+        .overlay-box { position: absolute; background: #222; border: 1px solid #444; z-index: 100; overflow: hidden; display: none; flex-direction: column; box-shadow: 0 4px 10px rgba(0,0,0,0.5); }
         .drag-handle { width: 100%; height: 28px; background: rgba(0,0,0,0.85); cursor: move; display: flex; align-items: center; justify-content: space-between; padding: 0 5px; box-sizing: border-box; }
         .handle-title { color: #aaa; font-size: 10px; font-weight: bold; text-transform: uppercase; letter-spacing: 1px; }
         .win-ctrls { display: flex; gap: 5px; }
@@ -42,18 +56,30 @@ const html = `
         .btn-max { background: #0f0; }
         .btn-close { background: #f00; }
         iframe { flex-grow: 1; border: none; width: 100%; background: #000; }
+        
         #watch-box { top: 60px; right: 10px; width: 45vw; height: 30vh; }
         #chat-box { bottom: 90px; left: 10px; width: 45vw; height: 40vh; border: 1px solid #0f0; }
+        
         #setup { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.92); z-index: 300; display: flex; flex-direction: column; align-items: center; justify-content: center; color: white; }
         input { padding: 12px; margin: 8px; font-size: 16px; width: 80%; max-width: 300px; border-radius: 5px; border: none; }
         label { color: #aaa; font-size: 12px; margin-top: 15px; }
         button.start-btn { margin-top: 20px; padding: 15px 40px; font-size: 18px; background: #0f0; border: none; font-weight: bold; border-radius: 5px; }
+        
         #controls { position: absolute; bottom: 20px; width: 100%; display: flex; justify-content: center; gap: 10px; z-index: 200; pointer-events: none; }
         .ctrl { pointer-events: auto; background: rgba(0,0,0,0.6); color: white; padding: 8px 12px; border-radius: 15px; border: 1px solid #666; font-size: 12px; text-transform: uppercase; }
         .ctrl:active { background: #fff; color: #000; }
+        
+        @media (orientation: portrait) {
+            #rotate-msg { display: flex; }
+        }
     </style>
 </head>
 <body>
+    <div id="rotate-msg">
+        <h1>⟳</h1>
+        <p>PLEASE ROTATE DEVICE<br>TO LANDSCAPE</p>
+    </div>
+
     <video autoplay playsinline muted></video>
     <div id="status-bar"><div class="badge" id="live-badge"><div class="dot"></div> <span id="status-text">READY</span></div></div>
 
@@ -111,8 +137,9 @@ const html = `
 
         async function initCam() {
             try {
+                // FORCE LANDSCAPE RESOLUTION
                 const stream = await navigator.mediaDevices.getUserMedia({ 
-                    video: { facingMode: "user", width: 1280, height: 720, frameRate: 30 }, 
+                    video: { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: 30 }, 
                     audio: true 
                 });
                 document.querySelector('video').srcObject = stream;
@@ -122,7 +149,6 @@ const html = `
         initCam();
 
         function startApp() {
-            // FIX: Trim spaces from inputs!
             const key = document.getElementById('streamKey').value.trim();
             const myUser = document.getElementById('myUser').value.trim();
             const watchUser = document.getElementById('watchUser').value.trim();
@@ -145,7 +171,6 @@ const html = `
             statusText.innerText = "INITIALIZING...";
 
             let mime = pickMimeType();
-            
             try {
                 mediaRecorder = mime ? new MediaRecorder(window.localStream, { mimeType: mime }) : new MediaRecorder(window.localStream);
             } catch (e) {
@@ -162,7 +187,7 @@ const html = `
                     return;
                 }
                 
-                mediaRecorder.start(250); // 250ms chunks
+                mediaRecorder.start(250);
                 badge.classList.add('live');
                 statusText.innerText = "LIVE (ON AIR)";
             });
@@ -179,21 +204,18 @@ const html = `
             const v = document.querySelector('video');
             v.style.transform = v.style.transform === 'scaleX(1)' ? 'scaleX(-1)' : 'scaleX(1)';
         }
-
         function resizeBox(id, size) {
             const el = document.getElementById(id);
             if(size === 'small') { el.style.width = '150px'; el.style.height = '120px'; }
             if(size === 'large') { el.style.width = '90vw'; el.style.height = '60vh'; }
         }
         function closeBox(id) { document.getElementById(id).style.display = 'none'; }
-        
         let ghost = false;
         function toggleOpacity() {
             ghost = !ghost;
             const val = ghost ? '0.3' : '1';
             document.querySelectorAll('.overlay-box').forEach(el => el.style.opacity = val);
         }
-
         document.querySelectorAll('.drag-handle').forEach(handle => {
             handle.addEventListener('touchmove', (e) => {
                 e.preventDefault();
@@ -219,30 +241,31 @@ io.on('connection', (socket) => {
     socket.on('config', (data, ack) => {
         if (ffmpeg) ffmpeg.kill();
         
-        console.log('Spawning FFmpeg. Target:', data.rtmp, 'Mime:', data.format);
+        console.log('Spawning FFmpeg. Target:', data.rtmp);
 
         const args = [
             '-i', '-',
             '-c:v', 'libx264',
-            '-profile:v', 'baseline',  // FIX: Maximum compatibility
-            '-level', '3.0',           // FIX: Maximum compatibility
+            '-profile:v', 'baseline',
             '-preset', 'ultrafast',
             '-tune', 'zerolatency',
             '-r', '30',
             '-g', '60',
             '-c:a', 'aac',
-            '-strict', '-2',           // FIX: Ensure AAC audio works
             '-ar', '44100',
             '-b:a', '128k',
             '-f', 'flv',
+            // CRITICAL FIXES FOR ROTATION:
+            '-metadata:s:v:0', 'rotate=0', // 1. Strip rotation tag
+            '-vf', 'scale=1280:720',       // 2. FORCE horizontal resolution
             data.rtmp
         ];
 
         try {
             ffmpeg = spawn(ffmpegPath, args);
             
-            ffmpeg.stdin.on('error', (e) => {
-                console.log('FFmpeg Stdin Error:', e.code);
+            ffmpeg.stderr.on('data', (d) => {
+                console.log(d.toString()); // Keep logging errors
             });
 
             ffmpeg.on('close', (c) => {
@@ -250,10 +273,7 @@ io.on('connection', (socket) => {
                 isReady = false;
             });
 
-            // FIX: Show ALL logs so we can see why it crashes
-            ffmpeg.stderr.on('data', (d) => {
-                console.log(d.toString());
-            });
+            ffmpeg.stdin.on('error', (e) => console.log('FFmpeg Stdin Error:', e.code));
 
             isReady = true;
             if (ack) ack({ ok: true });
@@ -283,4 +303,4 @@ io.on('connection', (socket) => {
     });
 });
 
-server.listen(port, () => console.log('Relay Debug running on ' + port));
+server.listen(port, () => console.log('Relay Landscape running on ' + port));
