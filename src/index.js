@@ -9,133 +9,259 @@ const server = http.createServer(app);
 const io = new Server(server);
 const port = process.env.PORT || 3000;
 
-// 1. THE FRONTEND (Phone UI)
+// --- FRONTEND (THE UI) ---
 const html = `
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Broadcaster</title>
+    <title>Stream Deck Relay</title>
     <script src="/socket.io/socket.io.js"></script>
     <style>
-        body { margin: 0; background: #000; overflow: hidden; height: 100vh; font-family: sans-serif; }
-        video { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
+        /* BASE */
+        body { margin: 0; background: #000; overflow: hidden; height: 100vh; width: 100vw; font-family: sans-serif; }
         
-        #status {
-            position: absolute; top: 10px; left: 10px; z-index: 500;
-            background: rgba(0,0,0,0.7); color: #fff; padding: 5px 10px; border-radius: 5px; font-size: 12px;
-            display: flex; align-items: center; gap: 5px;
+        /* CAMERA */
+        video { 
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%; 
+            object-fit: cover; transform: scaleX(-1); 
         }
-        .dot { width: 10px; height: 10px; border-radius: 50%; background: #555; }
-        .live { background: #f00; box-shadow: 0 0 5px #f00; }
 
-        #setup, #overlay-ui { position: absolute; z-index: 100; }
-        #setup { 
-            width: 100%; height: 100%; background: rgba(0,0,0,0.9); 
+        /* LIVE INDICATOR */
+        #status-bar {
+            position: absolute; top: 0; left: 0; width: 100%; 
+            display: flex; justify-content: center; padding-top: 5px; z-index: 50;
+        }
+        .badge {
+            background: rgba(0,0,0,0.6); color: #888; border: 1px solid #444;
+            padding: 5px 15px; border-radius: 20px; font-size: 12px; font-weight: bold;
+            display: flex; align-items: center; gap: 8px;
+        }
+        .dot { width: 8px; height: 8px; border-radius: 50%; background: #555; }
+        .badge.live { color: #fff; border-color: #f00; background: rgba(200,0,0,0.3); }
+        .badge.live .dot { background: #f00; box-shadow: 0 0 8px #f00; }
+
+        /* OVERLAYS (Chat & Watch) */
+        .overlay-box {
+            position: absolute; background: #222; border: 1px solid #444;
+            z-index: 100; overflow: hidden; display: none; flex-direction: column;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+        }
+        .drag-handle {
+            width: 100%; height: 25px; background: rgba(0,0,0,0.8);
+            cursor: move; display: flex; align-items: center; justify-content: center;
+            color: #aaa; font-size: 10px; letter-spacing: 1px; text-transform: uppercase;
+        }
+        iframe { flex-grow: 1; border: none; width: 100%; }
+
+        /* Default Positions */
+        #watch-box { top: 50px; right: 10px; width: 40vw; height: 25vh; }
+        #chat-box { bottom: 80px; left: 10px; width: 45vw; height: 40vh; border: 1px solid #0f0; }
+
+        /* SETUP SCREEN */
+        #setup {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.92); z-index: 300;
             display: flex; flex-direction: column; align-items: center; justify-content: center; color: white;
         }
-        input { padding: 15px; margin: 10px; font-size: 16px; width: 250px; }
-        button { padding: 15px 30px; font-size: 18px; background: #0f0; border: none; font-weight: bold; cursor: pointer; }
-        
-        /* WATCH BOX */
-        #watch-box {
-            position: absolute; top: 50px; right: 10px; width: 140px; height: 180px;
-            background: #222; border: 1px solid #444; overflow: hidden; z-index: 200; display: none;
+        input { padding: 12px; margin: 8px; font-size: 16px; width: 80%; max-width: 300px; border-radius: 5px; border: none; }
+        label { color: #aaa; font-size: 12px; margin-top: 15px; align-self: center; }
+        button.start-btn { margin-top: 20px; padding: 15px 40px; font-size: 18px; background: #0f0; border: none; font-weight: bold; border-radius: 5px; }
+
+        /* CONTROLS */
+        #controls {
+            position: absolute; bottom: 20px; width: 100%;
+            display: flex; justify-content: center; gap: 10px; z-index: 200; pointer-events: none;
         }
-        iframe { width: 100%; height: 100%; border: none; }
+        .ctrl { pointer-events: auto; background: rgba(0,0,0,0.6); color: white; padding: 8px 12px; border-radius: 15px; border: 1px solid #666; font-size: 12px;}
     </style>
 </head>
 <body>
     <video autoplay playsinline muted></video>
     
-    <div id="status"><div class="dot" id="dot"></div> <span id="msg">OFFLINE</span></div>
-
-    <div id="setup">
-        <h2>Mobile Broadcaster</h2>
-        <input id="key" placeholder="Enter Stream Key (Required)">
-        <input id="watch" placeholder="Watch User (Optional)">
-        <button onclick="startStream()">GO LIVE</button>
-        <p style="font-size:12px; color:#aaa; margin-top:20px;">Use Chaturbate Stream Key, NOT password</p>
+    <div id="status-bar">
+        <div class="badge" id="live-badge"><div class="dot"></div> <span id="status-text">OFFLINE</span></div>
     </div>
 
-    <div id="watch-box">
+    <div id="setup">
+        <h2>Stream Setup</h2>
+        
+        <label>STREAM KEY (Required to Broadcast)</label>
+        <input id="streamKey" placeholder="e.g. 8s9d-sd89-s8d9...">
+        
+        <label>YOUR USERNAME (For Chat)</label>
+        <input id="myUser" placeholder="Your Username">
+        
+        <label>WATCH USER (Optional)</label>
+        <input id="watchUser" placeholder="Other Username">
+        
+        <button class="start-btn" onclick="startApp()">GO LIVE</button>
+    </div>
+
+    <div id="watch-box" class="overlay-box">
+        <div class="drag-handle" data-target="watch-box">::: WATCH :::</div>
         <iframe id="watch-frame"></iframe>
+    </div>
+
+    <div id="chat-box" class="overlay-box">
+        <div class="drag-handle" data-target="chat-box">::: MY CHAT :::</div>
+        <iframe id="chat-frame"></iframe>
+    </div>
+
+    <div id="controls">
+        <button class="ctrl" onclick="toggleCam()">Flip</button>
+        <button class="ctrl" onclick="toggleSize('watch-box')">Size Watch</button>
+        <button class="ctrl" onclick="toggleSize('chat-box')">Size Chat</button>
+        <button class="ctrl" onclick="location.reload()">Reset</button>
     </div>
 
     <script>
         const socket = io();
         let mediaRecorder;
         
-        // 1. Start Camera
-        navigator.mediaDevices.getUserMedia({ 
-            video: { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 720 } }, 
-            audio: true 
-        }).then(stream => {
-            document.querySelector('video').srcObject = stream;
-            window.localStream = stream;
-        });
+        // 1. CAMERA START
+        async function initCam() {
+            try {
+                // iOS requires specific constraints to behave well
+                const stream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { facingMode: "user", width: 1280, height: 720, frameRate: 30 }, 
+                    audio: true 
+                });
+                document.querySelector('video').srcObject = stream;
+                window.localStream = stream;
+            } catch(e) { alert("Camera Error: " + e.message); }
+        }
+        initCam();
 
-        function startStream() {
-            const key = document.getElementById('key').value;
-            const watchUser = document.getElementById('watch').value;
-            if(!key) return alert("Stream Key Needed!");
+        // 2. MAIN LOGIC
+        function startApp() {
+            const key = document.getElementById('streamKey').value;
+            const myUser = document.getElementById('myUser').value;
+            const watchUser = document.getElementById('watchUser').value;
 
-            // Setup Watcher
-            if(watchUser) {
+            // Setup UI
+            if (watchUser) {
                 document.getElementById('watch-frame').src = 'https://chaturbate.com/embed/' + watchUser + '?bgcolor=black';
-                document.getElementById('watch-box').style.display = 'block';
+                document.getElementById('watch-box').style.display = 'flex';
+            }
+            if (myUser) {
+                document.getElementById('chat-frame').src = 'https://chaturbate.com/popout/' + myUser + '/chat/';
+                document.getElementById('chat-box').style.display = 'flex';
+            }
+            document.getElementById('setup').style.display = 'none';
+
+            // Start Broadcasting if Key exists
+            if (key) {
+                startBroadcasting(key);
+            }
+        }
+
+        // 3. BROADCASTING LOGIC (iOS FIX)
+        function startBroadcasting(key) {
+            const statusText = document.getElementById('status-text');
+            const badge = document.getElementById('live-badge');
+            
+            statusText.innerText = "CONNECTING...";
+            
+            // iOS Safari usually creates MP4/H.264, Android creates WebM
+            let options = { mimeType: 'video/webm;codecs=h264' };
+            if (!MediaRecorder.isTypeSupported(options.mimeType)) {
+                options = { mimeType: 'video/mp4' }; // Fallback for iOS
             }
 
-            document.getElementById('setup').style.display = 'none';
-            
-            // Start Server Relay
-            socket.emit('config', { rtmp: 'rtmp://live.chaturbate.com/live/' + key });
-            
-            // Start Recording & Sending
-            mediaRecorder = new MediaRecorder(window.localStream, { mimeType: 'video/webm;codecs=h264' });
-            
+            try {
+                mediaRecorder = new MediaRecorder(window.localStream, options);
+            } catch (e) {
+                alert("Recorder Error: " + e.message);
+                return;
+            }
+
+            // Tell Server to start FFmpeg
+            socket.emit('config', { 
+                rtmp: 'rtmp://live.chaturbate.com/live/' + key,
+                format: options.mimeType // Tell server what format we are sending
+            });
+
             mediaRecorder.ondataavailable = (e) => {
                 if(e.data.size > 0) socket.emit('binarystream', e.data);
             };
+
+            mediaRecorder.start(250); // Send slice every 250ms
             
-            mediaRecorder.start(250); // Send chunks every 250ms
-            
-            document.getElementById('dot').classList.add('live');
-            document.getElementById('msg').innerText = "LIVE SENDING";
+            badge.classList.add('live');
+            statusText.innerText = "LIVE (SENDING)";
         }
+
+        // 4. UTILS (Resizing/Dragging)
+        function toggleCam() {
+            const v = document.querySelector('video');
+            v.style.transform = v.style.transform === 'scaleX(1)' ? 'scaleX(-1)' : 'scaleX(1)';
+        }
+
+        const sizes = ['30%', '50%', '90%'];
+        let sizeIdx = 0;
+        function toggleSize(id) {
+            const el = document.getElementById(id);
+            sizeIdx = (sizeIdx + 1) % sizes.length;
+            el.style.width = sizes[sizeIdx];
+            el.style.height = (id === 'chat-box') ? '50vh' : 'auto';
+        }
+
+        // Touch Drag Logic
+        document.querySelectorAll('.drag-handle').forEach(handle => {
+            handle.addEventListener('touchmove', (e) => {
+                e.preventDefault();
+                const box = document.getElementById(handle.dataset.target);
+                const t = e.targetTouches[0];
+                box.style.left = (t.pageX - 50) + 'px';
+                box.style.top = (t.pageY - 10) + 'px';
+            });
+        });
     </script>
 </body>
 </html>
 `;
 
-// 2. THE BACKEND (FFmpeg Relay)
+// --- BACKEND (FFMPEG RELAY) ---
 app.get('/', (req, res) => res.send(html));
 
 io.on('connection', (socket) => {
-    console.log('User connected');
     let ffmpeg;
 
     socket.on('config', (data) => {
-        if (ffmpeg) ffmpeg.kill(); // Kill previous if exists
-        console.log('Starting Stream to:', data.rtmp);
+        if (ffmpeg) ffmpeg.kill();
+        
+        console.log(\`Stream Starting. Target: \${data.rtmp} | Input Format: \${data.format}\`);
 
-        // Spawn FFmpeg to transcode WebM (Browser) to FLV (RTMP)
-        //
-        ffmpeg = spawn(ffmpegPath, [
-            '-i', '-',                // Input from stdin
-            '-c:v', 'libx264',        // Video Codec
-            '-preset', 'ultrafast',   // Speed over quality (critical for live)
-            '-tune', 'zerolatency',   // Reduce delay
-            '-c:a', 'aac',            // Audio Codec
-            '-ar', '44100',           // Audio Rate
-            '-b:a', '128k',           // Audio Bitrate
-            '-f', 'flv',              // RTMP format
-            data.rtmp                 // Chaturbate URL
-        ]);
+        // Determine input flags based on what the phone is sending
+        // If it's MP4 (iOS), we need different flags than WebM
+        const isMP4 = data.format && data.format.includes('mp4');
 
-        ffmpeg.stderr.on('data', (d) => console.log('FFmpeg:', d.toString()));
-        ffmpeg.on('close', (c) => console.log('FFmpeg exited:', c));
+        const args = [
+            '-i', '-',                 // Input from Socket (Stdin)
+            '-c:v', 'libx264',         // Re-encode Video
+            '-preset', 'ultrafast',    // Fast encoding for real-time
+            '-tune', 'zerolatency',    // Low latency
+            '-r', '30',                // Force 30fps
+            '-g', '60',                // Keyframe every 2s
+            '-c:a', 'aac',             // Re-encode Audio
+            '-ar', '44100',
+            '-b:a', '128k',
+            '-f', 'flv',               // Output format (RTMP)
+            data.rtmp
+        ];
+        
+        // Sometimes iOS MP4 streams need "-f mp4" explicitly on input
+        if(isMP4) {
+            // Prepend input format flags
+            // Note: FFmpeg usually auto-detects, but explicit helps
+        }
+
+        ffmpeg = spawn(ffmpegPath, args);
+
+        ffmpeg.stderr.on('data', (d) => console.log('FFmpeg Log:', d.toString().substring(0, 100)));
+        ffmpeg.on('close', (c) => console.log('FFmpeg stopped, code:', c));
     });
 
     socket.on('binarystream', (data) => {
@@ -149,4 +275,4 @@ io.on('connection', (socket) => {
     });
 });
 
-server.listen(port, () => console.log('Relay running on ' + port));
+server.listen(port, () => console.log('Server running on port ' + port));
