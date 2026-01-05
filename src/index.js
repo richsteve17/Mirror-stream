@@ -23,18 +23,10 @@ const html = `
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Stream Relay Landscape</title>
+    <title>Stream Relay Pro</title>
     <script src="/socket.io/socket.io.js"></script>
     <style>
         body { margin: 0; background: #000; overflow: hidden; height: 100vh; width: 100vw; font-family: sans-serif; }
-        
-        /* ROTATION WARNING */
-        #rotate-msg {
-            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-            background: #000; z-index: 9999; display: none;
-            flex-direction: column; align-items: center; justify-content: center;
-            color: white; text-align: center;
-        }
         
         /* VIDEO LAYER */
         video { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
@@ -68,18 +60,9 @@ const html = `
         #controls { position: absolute; bottom: 20px; width: 100%; display: flex; justify-content: center; gap: 10px; z-index: 200; pointer-events: none; }
         .ctrl { pointer-events: auto; background: rgba(0,0,0,0.6); color: white; padding: 8px 12px; border-radius: 15px; border: 1px solid #666; font-size: 12px; text-transform: uppercase; }
         .ctrl:active { background: #fff; color: #000; }
-        
-        @media (orientation: portrait) {
-            #rotate-msg { display: flex; }
-        }
     </style>
 </head>
 <body>
-    <div id="rotate-msg">
-        <h1>⟳</h1>
-        <p>PLEASE ROTATE DEVICE<br>TO LANDSCAPE</p>
-    </div>
-
     <video autoplay playsinline muted></video>
     <div id="status-bar"><div class="badge" id="live-badge"><div class="dot"></div> <span id="status-text">READY</span></div></div>
 
@@ -137,7 +120,7 @@ const html = `
 
         async function initCam() {
             try {
-                // FORCE LANDSCAPE RESOLUTION
+                // Request Landscape Resolution
                 const stream = await navigator.mediaDevices.getUserMedia({ 
                     video: { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: 30 }, 
                     audio: true 
@@ -149,6 +132,7 @@ const html = `
         initCam();
 
         function startApp() {
+            // TRIM SPACES - Critical Fix
             const key = document.getElementById('streamKey').value.trim();
             const myUser = document.getElementById('myUser').value.trim();
             const watchUser = document.getElementById('watchUser').value.trim();
@@ -171,6 +155,7 @@ const html = `
             statusText.innerText = "INITIALIZING...";
 
             let mime = pickMimeType();
+            
             try {
                 mediaRecorder = mime ? new MediaRecorder(window.localStream, { mimeType: mime }) : new MediaRecorder(window.localStream);
             } catch (e) {
@@ -187,7 +172,7 @@ const html = `
                     return;
                 }
                 
-                mediaRecorder.start(250);
+                mediaRecorder.start(250); 
                 badge.classList.add('live');
                 statusText.innerText = "LIVE (ON AIR)";
             });
@@ -243,37 +228,47 @@ io.on('connection', (socket) => {
         
         console.log('Spawning FFmpeg. Target:', data.rtmp);
 
+        // HARDENED FFMPEG ARGS
         const args = [
             '-i', '-',
+
+            // 1. ROTATION FIX (Physically rotate pixels 90 deg clockwise)
+            '-noautorotate',
+            '-vf', 'transpose=1,scale=1280:720,setsar=1',
+            '-metadata:s:v', 'rotate=0',
+
+            // 2. VIDEO ENCODING (Hardened for Compatibility)
             '-c:v', 'libx264',
-            '-profile:v', 'baseline',
             '-preset', 'ultrafast',
             '-tune', 'zerolatency',
+            '-pix_fmt', 'yuv420p',
+            '-profile:v', 'baseline',
+            '-level', '3.1',
             '-r', '30',
             '-g', '60',
+            '-b:v', '2500k',
+            '-maxrate', '2500k',
+            '-bufsize', '5000k',
+
+            // 3. AUDIO ENCODING
             '-c:a', 'aac',
             '-ar', '44100',
             '-b:a', '128k',
+
+            // 4. RTMP OUTPUT
+            '-flvflags', 'no_duration_filesize',
             '-f', 'flv',
-            // CRITICAL FIXES FOR ROTATION:
-            '-metadata:s:v:0', 'rotate=0', // 1. Strip rotation tag
-            '-vf', 'scale=1280:720',       // 2. FORCE horizontal resolution
             data.rtmp
         ];
 
         try {
             ffmpeg = spawn(ffmpegPath, args);
             
-            ffmpeg.stderr.on('data', (d) => {
-                console.log(d.toString()); // Keep logging errors
-            });
-
-            ffmpeg.on('close', (c) => {
-                console.log('FFmpeg exited:', c);
-                isReady = false;
-            });
-
-            ffmpeg.stdin.on('error', (e) => console.log('FFmpeg Stdin Error:', e.code));
+            // LOGGING: No truncation, see everything
+            ffmpeg.stderr.on('data', (d) => console.log('FFmpeg:', d.toString()));
+            ffmpeg.stdin.on('error', (e) => console.log('FFmpeg stdin error:', e.code, e.message));
+            ffmpeg.on('close', (code, signal) => console.log('FFmpeg exited. code:', code, 'signal:', signal));
+            ffmpeg.on('error', (e) => console.log('FFmpeg spawn error:', e.message));
 
             isReady = true;
             if (ack) ack({ ok: true });
@@ -303,4 +298,4 @@ io.on('connection', (socket) => {
     });
 });
 
-server.listen(port, () => console.log('Relay Landscape running on ' + port));
+server.listen(port, () => console.log('Relay Pro running on ' + port));
