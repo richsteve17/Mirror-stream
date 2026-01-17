@@ -160,14 +160,16 @@ const html = `
             if (!rtmpUrl.endsWith('/')) rtmpUrl += '/';
 
             if (watchUser) {
-                window.watchUrl = 'https://chaturbate.com/' + watchUser + '/';
+                const watchBtn = document.getElementById('open-watch-btn');
+                const watchUrl = 'https://chaturbate.com/' + watchUser + '/';
+                watchBtn.onclick = () => { window.open(watchUrl, '_blank'); };
                 document.getElementById('watch-box').style.display = 'flex';
-                document.getElementById('open-watch-btn').onclick = () => window.open(window.watchUrl, 'monitor', 'width=400,height=300');
             }
             if (myUser) {
-                window.chatUrl = 'https://chaturbate.com/popout/' + myUser + '/chat/';
+                const chatBtn = document.getElementById('open-chat-btn');
+                const chatUrl = 'https://chaturbate.com/popout/' + myUser + '/chat/';
+                chatBtn.onclick = () => { window.open(chatUrl, '_blank'); };
                 document.getElementById('chat-box').style.display = 'flex';
-                document.getElementById('open-chat-btn').onclick = () => window.open(window.chatUrl, 'chat', 'width=350,height=500');
             }
             
             document.getElementById('setup').style.display = 'none';
