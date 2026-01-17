@@ -167,15 +167,9 @@ const html = `
             if (rtmpUrl.startsWith('RTMP://') || rtmpUrl.startsWith('Rtmp://')) rtmpUrl = 'rtmp://' + rtmpUrl.substring(7);
             if (!rtmpUrl.endsWith('/')) rtmpUrl += '/';
 
-            if (watchUser) {
-                // Hide monitor box - Chaturbate blocks all embedding
-                document.getElementById('watch-box').style.display = 'none';
-            }
-            if (myUser) {
-                // Try chat-only popout URL through proxy
-                document.getElementById('chat-frame').src = '/proxy?url=' + encodeURIComponent('https://chaturbate.com/popout/' + myUser + '/chat/');
-                document.getElementById('chat-box').style.display = 'flex';
-            }
+            // Chaturbate blocks all embedding via Cloudflare - hide broken overlays
+            document.getElementById('watch-box').style.display = 'none';
+            document.getElementById('chat-box').style.display = 'none';
             
             document.getElementById('setup').style.display = 'none';
             if (key && rtmpUrl) startBroadcasting(rtmpUrl, key);
