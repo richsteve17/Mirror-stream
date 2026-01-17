@@ -212,9 +212,7 @@ io.on('connection', (socket) => {
             '-fflags', '+genpts+discardcorrupt',
             '-i', '-',
             '-c:v', 'copy',
-            '-c:a', 'aac',
-            '-ar', '44100',
-            '-b:a', '128k',
+            '-c:a', 'copy',
             '-f', 'flv',
             data.target
         ];
