@@ -209,27 +209,20 @@ io.on('connection', (socket) => {
 
         const args = [
             '-loglevel', 'verbose',
-            '-fflags', '+genpts+discardcorrupt+nobuffer',
-            '-probesize', '5000000',
-            '-analyzeduration', '5000000',
+            '-fflags', '+genpts+discardcorrupt',
             '-i', '-',
-            '-vf', 'scale=1280:720,setsar=1',
-            '-metadata:s:v', 'rotate=0',
             '-c:v', 'libx264',
             '-preset', 'ultrafast',
             '-tune', 'zerolatency',
             '-pix_fmt', 'yuv420p',
             '-profile:v', 'baseline',
             '-g', '60',
-            '-keyint_min', '60',
             '-b:v', '2500k',
             '-maxrate', '2500k',
             '-bufsize', '5000k',
             '-c:a', 'aac',
             '-ar', '44100',
             '-b:a', '128k',
-            '-flvflags', 'no_duration_filesize',
-            '-rtmp_live', 'live',
             '-f', 'flv',
             data.target
         ];
