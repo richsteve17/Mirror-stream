@@ -7,7 +7,6 @@ import http from 'http';
 const app = express();
 const server = http.createServer(app);
 
-// 1. FORCE WEBSOCKETS
 const io = new Server(server, {
     transports: ["websocket"], 
     maxHttpBufferSize: 1e8, 
@@ -16,26 +15,22 @@ const io = new Server(server, {
 
 const port = process.env.PORT || 3000;
 
-// --- FRONTEND ---
 const html = `
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Stream Relay Final</title>
+    <title>Stream Relay Bulletproof</title>
     <script src="/socket.io/socket.io.js"></script>
     <style>
         body { margin: 0; background: #000; overflow: hidden; height: 100vh; width: 100vw; font-family: sans-serif; }
-        
         video { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
-
         #status-bar { position: absolute; top: 0; left: 0; width: 100%; display: flex; justify-content: center; padding-top: 5px; z-index: 50; pointer-events: none; }
         .badge { background: rgba(0,0,0,0.6); color: #888; border: 1px solid #444; padding: 5px 15px; border-radius: 20px; font-size: 12px; font-weight: bold; display: flex; align-items: center; gap: 8px; }
         .dot { width: 8px; height: 8px; border-radius: 50%; background: #555; }
         .badge.live { color: #fff; border-color: #f00; background: rgba(200,0,0,0.5); }
         .badge.live .dot { background: #f00; box-shadow: 0 0 8px #f00; }
-
         .overlay-box { position: absolute; background: #222; border: 1px solid #444; z-index: 100; overflow: hidden; display: none; flex-direction: column; box-shadow: 0 4px 10px rgba(0,0,0,0.5); }
         .drag-handle { width: 100%; height: 28px; background: rgba(0,0,0,0.85); cursor: move; display: flex; align-items: center; justify-content: space-between; padding: 0 5px; box-sizing: border-box; }
         .handle-title { color: #aaa; font-size: 10px; font-weight: bold; text-transform: uppercase; letter-spacing: 1px; }
@@ -45,15 +40,12 @@ const html = `
         .btn-max { background: #0f0; }
         .btn-close { background: #f00; }
         iframe { flex-grow: 1; border: none; width: 100%; background: #000; }
-        
         #watch-box { top: 60px; right: 10px; width: 45vw; height: 30vh; }
         #chat-box { bottom: 90px; left: 10px; width: 45vw; height: 40vh; border: 1px solid #0f0; }
-        
         #setup { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.92); z-index: 300; display: flex; flex-direction: column; align-items: center; justify-content: center; color: white; }
         input { padding: 12px; margin: 8px; font-size: 16px; width: 80%; max-width: 300px; border-radius: 5px; border: none; }
         label { color: #aaa; font-size: 12px; margin-top: 15px; }
         button.start-btn { margin-top: 20px; padding: 15px 40px; font-size: 18px; background: #0f0; border: none; font-weight: bold; border-radius: 5px; }
-        
         #controls { position: absolute; bottom: 20px; width: 100%; display: flex; justify-content: center; gap: 10px; z-index: 200; pointer-events: none; }
         .ctrl { pointer-events: auto; background: rgba(0,0,0,0.6); color: white; padding: 8px 12px; border-radius: 15px; border: 1px solid #666; font-size: 12px; text-transform: uppercase; }
     </style>
@@ -64,58 +56,33 @@ const html = `
 
     <div id="setup">
         <h2>Stream Setup</h2>
-        <label>RTMP URL</label>
-        <input id="rtmpUrl" placeholder="Paste URL Here">
-        <label>BROADCAST TOKEN</label>
+        <label>RTMP URL (e.g. rtmp://global...)</label>
+        <input id="rtmpUrl" placeholder="Paste Full URL Here">
+        
+        <label>BROADCAST TOKEN (Key)</label>
         <input id="streamKey" placeholder="Paste Token Here">
-        <label>CHAT USERNAME</label>
-        <input id="myUser" placeholder="Your Username">
-        <label>WATCH USERNAME</label>
-        <input id="watchUser" placeholder="Other Performer">
+        
+        <label>YOUR USERNAME (No .com, just name)</label>
+        <input id="myUser" placeholder="e.g. richsteve17">
+        
+        <label>MONITOR USERNAME (Just name)</label>
+        <input id="watchUser" placeholder="e.g. othermodel">
+        
         <button class="start-btn" onclick="startApp()">GO LIVE</button>
     </div>
 
     <div id="watch-box" class="overlay-box">
-        <div class="drag-handle" data-target="watch-box">
-            <span class="handle-title">Monitor</span>
-            <div class="win-ctrls">
-                <button class="win-btn btn-min" onclick="resizeBox('watch-box', 'small')"></button>
-                <button class="win-btn btn-max" onclick="resizeBox('watch-box', 'large')"></button>
-                <button class="win-btn btn-close" onclick="closeBox('watch-box')"></button>
-            </div>
-        </div>
-        <iframe id="watch-frame"></iframe>
+        <div class="drag-handle" data-target="watch-box"><span class="handle-title">Monitor</span><div class="win-ctrls"><button class="win-btn btn-min" onclick="resizeBox('watch-box', 'small')"></button><button class="win-btn btn-max" onclick="resizeBox('watch-box', 'large')"></button><button class="win-btn btn-close" onclick="closeBox('watch-box')"></button></div></div><iframe id="watch-frame"></iframe>
     </div>
-
-    <div id="chat-box" class="overlay-box">
-        <div class="drag-handle" data-target="chat-box">
-            <span class="handle-title">My Chat</span>
-            <div class="win-ctrls">
-                <button class="win-btn btn-min" onclick="resizeBox('chat-box', 'small')"></button>
-                <button class="win-btn btn-max" onclick="resizeBox('chat-box', 'large')"></button>
-            </div>
-        </div>
-        <iframe id="chat-frame"></iframe>
-    </div>
-
-    <div id="controls">
-        <button class="ctrl" onclick="toggleCam()">Flip Cam</button>
-        <button class="ctrl" onclick="toggleOpacity()">Ghost Mode</button>
-        <button class="ctrl" onclick="location.reload()">Reset</button>
-    </div>
+    <div id="chat-box" class="overlay-box"><div class="drag-handle" data-target="chat-box"><span class="handle-title">My Chat</span><div class="win-ctrls"><button class="win-btn btn-min" onclick="resizeBox('chat-box', 'small')"></button><button class="win-btn btn-max" onclick="resizeBox('chat-box', 'large')"></button></div></div><iframe id="chat-frame"></iframe></div>
+    <div id="controls"><button class="ctrl" onclick="toggleCam()">Flip Cam</button><button class="ctrl" onclick="toggleOpacity()">Ghost Mode</button><button class="ctrl" onclick="location.reload()">Reset</button></div>
 
     <script>
         const socket = io({ transports: ["websocket"] });
         let mediaRecorder;
         
         function pickMimeType() {
-            const candidates = [
-                "video/mp4",
-                'video/mp4;codecs="avc1.42E01E,mp4a.40.2"',
-                "video/webm;codecs=h264",
-                "video/webm;codecs=vp8,opus",
-                "video/webm"
-            ];
+            const candidates = ["video/mp4", "video/webm;codecs=h264", "video/webm"];
             return candidates.find(t => MediaRecorder.isTypeSupported(t)) || "";
         }
 
@@ -138,15 +105,8 @@ const html = `
             const watchUser = document.getElementById('watchUser').value.trim();
 
             if (rtmpUrl && !rtmpUrl.endsWith('/')) rtmpUrl += '/';
-
-            if (watchUser) {
-                document.getElementById('watch-frame').src = 'https://chaturbate.com/embed/' + watchUser + '?bgcolor=black';
-                document.getElementById('watch-box').style.display = 'flex';
-            }
-            if (myUser) {
-                document.getElementById('chat-frame').src = 'https://chaturbate.com/popout/' + myUser + '/chat/';
-                document.getElementById('chat-box').style.display = 'flex';
-            }
+            if (watchUser) { document.getElementById('watch-frame').src = 'https://chaturbate.com/embed/' + watchUser + '?bgcolor=black'; document.getElementById('watch-box').style.display = 'flex'; }
+            if (myUser) { document.getElementById('chat-frame').src = 'https://chaturbate.com/popout/' + myUser + '/chat/'; document.getElementById('chat-box').style.display = 'flex'; }
             document.getElementById('setup').style.display = 'none';
             if (key && rtmpUrl) startBroadcasting(rtmpUrl, key);
         }
@@ -159,16 +119,10 @@ const html = `
             let mime = pickMimeType();
             try {
                 mediaRecorder = mime ? new MediaRecorder(window.localStream, { mimeType: mime }) : new MediaRecorder(window.localStream);
-            } catch (e) {
-                alert("Recorder Create Failed: " + e.message);
-                return;
-            }
+            } catch (e) { alert("Recorder Error: " + e.message); return; }
 
             socket.emit('config', { target: url + key, format: mime }, (response) => {
-                if (!response || !response.ok) {
-                    alert("Server failed to spawn FFmpeg");
-                    return;
-                }
+                if (!response || !response.ok) { alert("Server Error"); return; }
                 mediaRecorder.start(250); 
                 badge.classList.add('live');
                 statusText.innerText = "LIVE (ON AIR)";
@@ -182,67 +136,40 @@ const html = `
             };
         }
 
-        function toggleCam() {
-            const v = document.querySelector('video');
-            v.style.transform = v.style.transform === 'scaleX(1)' ? 'scaleX(-1)' : 'scaleX(1)';
-        }
-        function resizeBox(id, size) {
-            const el = document.getElementById(id);
-            if(size === 'small') { el.style.width = '150px'; el.style.height = '120px'; }
-            if(size === 'large') { el.style.width = '90vw'; el.style.height = '60vh'; }
-        }
+        function toggleCam() { const v = document.querySelector('video'); v.style.transform = v.style.transform === 'scaleX(1)' ? 'scaleX(-1)' : 'scaleX(1)'; }
+        function resizeBox(id, size) { const el = document.getElementById(id); if(size === 'small') { el.style.width = '150px'; el.style.height = '120px'; } if(size === 'large') { el.style.width = '90vw'; el.style.height = '60vh'; } }
         function closeBox(id) { document.getElementById(id).style.display = 'none'; }
         let ghost = false;
-        function toggleOpacity() {
-            ghost = !ghost;
-            const val = ghost ? '0.3' : '1';
-            document.querySelectorAll('.overlay-box').forEach(el => el.style.opacity = val);
-        }
-        document.querySelectorAll('.drag-handle').forEach(handle => {
-            handle.addEventListener('touchmove', (e) => {
-                e.preventDefault();
-                const box = document.getElementById(handle.dataset.target);
-                const t = e.targetTouches[0];
-                box.style.left = (t.pageX - 50) + 'px';
-                box.style.top = (t.pageY - 10) + 'px';
-            });
-        });
+        function toggleOpacity() { ghost = !ghost; document.querySelectorAll('.overlay-box').forEach(el => el.style.opacity = ghost ? '0.3' : '1'); }
+        document.querySelectorAll('.drag-handle').forEach(handle => { handle.addEventListener('touchmove', (e) => { e.preventDefault(); const box = document.getElementById(handle.dataset.target); const t = e.targetTouches[0]; box.style.left = (t.pageX - 50) + 'px'; box.style.top = (t.pageY - 10) + 'px'; }); });
     </script>
 </body>
 </html>
 `;
 
-// --- BACKEND ---
 app.get('/', (req, res) => res.send(html));
 
 io.on('connection', (socket) => {
     let ffmpeg;
-    let streamQueue = []; 
     let isReady = false;
 
     socket.on('config', (data, ack) => {
         if (ffmpeg) ffmpeg.kill();
-        
-        console.log('Spawning FFmpeg. Full Target:', data.target);
+        console.log('Target:', data.target);
 
+        // BULLETPROOF ARGS: No complex flags, just basic stream settings
         const args = [
-            // FIX: 'noautorotate' MUST be an input option (before -i)
-            '-noautorotate', 
             '-i', '-',
             
-            // Filters apply after input
-            '-vf', 'transpose=1,scale=1280:720,setsar=1',
-            '-metadata:s:v', 'rotate=0',
-            
-            // Encoding Settings
+            // Just force the size, don't worry about rotating manually
+            '-vf', 'scale=1280:720,setsar=1', 
+            '-metadata:s:v', 'rotate=0',     // Strip "rotate" tag
+
             '-c:v', 'libx264',
             '-preset', 'ultrafast',
             '-tune', 'zerolatency',
             '-pix_fmt', 'yuv420p',
             '-profile:v', 'baseline',
-            '-level', '3.1',
-            '-r', '30',
-            '-g', '60',
             '-b:v', '2500k',
             '-maxrate', '2500k',
             '-bufsize', '5000k',
@@ -257,17 +184,12 @@ io.on('connection', (socket) => {
         try {
             ffmpeg = spawn(ffmpegPath, args);
             
-            ffmpeg.stderr.on('data', (d) => console.log('FFmpeg:', d.toString()));
-            ffmpeg.stdin.on('error', (e) => console.log('FFmpeg stdin error:', e.code));
-            ffmpeg.on('close', (c) => console.log('FFmpeg exited:', c));
+            ffmpeg.stderr.on('data', (d) => console.log(d.toString()));
+            ffmpeg.on('close', (c) => { console.log('Exit:', c); isReady = false; });
+            ffmpeg.stdin.on('error', (e) => {}); 
 
             isReady = true;
             if (ack) ack({ ok: true });
-            
-            while(streamQueue.length > 0) {
-                const chunk = streamQueue.shift();
-                if (ffmpeg.stdin.writable) ffmpeg.stdin.write(chunk);
-            }
 
         } catch (e) {
             console.error("Spawn Error:", e);
@@ -276,17 +198,12 @@ io.on('connection', (socket) => {
     });
 
     socket.on('binarystream', (data) => {
-        const buffer = Buffer.from(data);
         if (isReady && ffmpeg && ffmpeg.stdin.writable) {
-            ffmpeg.stdin.write(buffer);
-        } else {
-            streamQueue.push(buffer);
+            ffmpeg.stdin.write(Buffer.from(data));
         }
     });
 
-    socket.on('disconnect', () => {
-        if (ffmpeg) ffmpeg.kill();
-    });
+    socket.on('disconnect', () => { if (ffmpeg) ffmpeg.kill(); });
 });
 
-server.listen(port, () => console.log('Relay Final running on ' + port));
+server.listen(port, () => console.log('Relay Bulletproof running on ' + port));
