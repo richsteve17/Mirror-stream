@@ -160,13 +160,13 @@ const html = `
             if (!rtmpUrl.endsWith('/')) rtmpUrl += '/';
 
             if (watchUser) {
-                // Chaturbate official embed player
-                document.getElementById('watch-frame').src = 'https://chaturbate.com/embed/' + watchUser + '/?join_overlay=1&bgcolor=black';
+                // Chaturbate official embed - use the affiliate embed format
+                document.getElementById('watch-frame').src = 'https://chaturbate.com/in/?tour=dT8X&campaign=8sKXp&room=' + watchUser;
                 document.getElementById('watch-box').style.display = 'flex';
             }
             if (myUser) {
-                // Chat popup embed
-                document.getElementById('chat-frame').src = 'https://chaturbate.com/embed/' + myUser + '/chat/';
+                // Chat - use fullvideo which sometimes allows embedding
+                document.getElementById('chat-frame').src = 'https://chaturbate.com/fullvideo/?b=' + myUser;
                 document.getElementById('chat-box').style.display = 'flex';
             }
             
