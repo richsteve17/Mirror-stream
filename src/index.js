@@ -23,22 +23,19 @@ const html = `
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Stream Relay Custom</title>
+    <title>Stream Relay Final</title>
     <script src="/socket.io/socket.io.js"></script>
     <style>
         body { margin: 0; background: #000; overflow: hidden; height: 100vh; width: 100vw; font-family: sans-serif; }
         
-        /* VIDEO LAYER */
         video { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
 
-        /* STATUS BAR */
         #status-bar { position: absolute; top: 0; left: 0; width: 100%; display: flex; justify-content: center; padding-top: 5px; z-index: 50; pointer-events: none; }
         .badge { background: rgba(0,0,0,0.6); color: #888; border: 1px solid #444; padding: 5px 15px; border-radius: 20px; font-size: 12px; font-weight: bold; display: flex; align-items: center; gap: 8px; }
         .dot { width: 8px; height: 8px; border-radius: 50%; background: #555; }
         .badge.live { color: #fff; border-color: #f00; background: rgba(200,0,0,0.5); }
         .badge.live .dot { background: #f00; box-shadow: 0 0 8px #f00; }
 
-        /* OVERLAYS */
         .overlay-box { position: absolute; background: #222; border: 1px solid #444; z-index: 100; overflow: hidden; display: none; flex-direction: column; box-shadow: 0 4px 10px rgba(0,0,0,0.5); }
         .drag-handle { width: 100%; height: 28px; background: rgba(0,0,0,0.85); cursor: move; display: flex; align-items: center; justify-content: space-between; padding: 0 5px; box-sizing: border-box; }
         .handle-title { color: #aaa; font-size: 10px; font-weight: bold; text-transform: uppercase; letter-spacing: 1px; }
@@ -67,19 +64,14 @@ const html = `
 
     <div id="setup">
         <h2>Stream Setup</h2>
-        
-        <label>RTMP URL (From Chaturbate)</label>
-        <input id="rtmpUrl" placeholder="rtmp://live.chaturbate.com/live/">
-        
-        <label>BROADCAST TOKEN (Stream Key)</label>
+        <label>RTMP URL</label>
+        <input id="rtmpUrl" placeholder="Paste URL Here">
+        <label>BROADCAST TOKEN</label>
         <input id="streamKey" placeholder="Paste Token Here">
-        
         <label>CHAT USERNAME</label>
         <input id="myUser" placeholder="Your Username">
-        
         <label>WATCH USERNAME</label>
         <input id="watchUser" placeholder="Other Performer">
-        
         <button class="start-btn" onclick="startApp()">GO LIVE</button>
     </div>
 
@@ -140,16 +132,12 @@ const html = `
         initCam();
 
         function startApp() {
-            // TRIM SPACES EVERYWHERE
             let rtmpUrl = document.getElementById('rtmpUrl').value.trim();
             const key = document.getElementById('streamKey').value.trim();
             const myUser = document.getElementById('myUser').value.trim();
             const watchUser = document.getElementById('watchUser').value.trim();
 
-            // Ensure URL ends with slash if user forgot it
-            if (rtmpUrl && !rtmpUrl.endsWith('/')) {
-                rtmpUrl += '/';
-            }
+            if (rtmpUrl && !rtmpUrl.endsWith('/')) rtmpUrl += '/';
 
             if (watchUser) {
                 document.getElementById('watch-frame').src = 'https://chaturbate.com/embed/' + watchUser + '?bgcolor=black';
@@ -176,18 +164,11 @@ const html = `
                 return;
             }
 
-            // Combine URL + Key
-            const fullTarget = url + key;
-
-            socket.emit('config', { 
-                target: fullTarget,
-                format: mime 
-            }, (response) => {
+            socket.emit('config', { target: url + key, format: mime }, (response) => {
                 if (!response || !response.ok) {
                     alert("Server failed to spawn FFmpeg");
                     return;
                 }
-                
                 mediaRecorder.start(250); 
                 badge.classList.add('live');
                 statusText.innerText = "LIVE (ON AIR)";
@@ -245,10 +226,15 @@ io.on('connection', (socket) => {
         console.log('Spawning FFmpeg. Full Target:', data.target);
 
         const args = [
+            // FIX: 'noautorotate' MUST be an input option (before -i)
+            '-noautorotate', 
             '-i', '-',
-            '-noautorotate',
+            
+            // Filters apply after input
             '-vf', 'transpose=1,scale=1280:720,setsar=1',
             '-metadata:s:v', 'rotate=0',
+            
+            // Encoding Settings
             '-c:v', 'libx264',
             '-preset', 'ultrafast',
             '-tune', 'zerolatency',
@@ -265,7 +251,7 @@ io.on('connection', (socket) => {
             '-b:a', '128k',
             '-flvflags', 'no_duration_filesize',
             '-f', 'flv',
-            data.target // Use the dynamic full target (URL + Key)
+            data.target
         ];
 
         try {
@@ -303,4 +289,4 @@ io.on('connection', (socket) => {
     });
 });
 
-server.listen(port, () => console.log('Relay Custom running on ' + port));
+server.listen(port, () => console.log('Relay Final running on ' + port));
