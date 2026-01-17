@@ -21,7 +21,7 @@ const html = `
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Stream Relay Bulletproof</title>
+    <title>Stream Relay Auto-Save</title>
     <script src="/socket.io/socket.io.js"></script>
     <style>
         body { margin: 0; background: #000; overflow: hidden; height: 100vh; width: 100vw; font-family: sans-serif; }
@@ -40,14 +40,18 @@ const html = `
         .btn-max { background: #0f0; }
         .btn-close { background: #f00; }
         iframe { flex-grow: 1; border: none; width: 100%; background: #000; }
-        #watch-box { top: 60px; right: 10px; width: 45vw; height: 30vh; }
-        #chat-box { bottom: 90px; left: 10px; width: 45vw; height: 40vh; border: 1px solid #0f0; }
+        
         #setup { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.92); z-index: 300; display: flex; flex-direction: column; align-items: center; justify-content: center; color: white; }
         input { padding: 12px; margin: 8px; font-size: 16px; width: 80%; max-width: 300px; border-radius: 5px; border: none; }
         label { color: #aaa; font-size: 12px; margin-top: 15px; }
         button.start-btn { margin-top: 20px; padding: 15px 40px; font-size: 18px; background: #0f0; border: none; font-weight: bold; border-radius: 5px; }
+        
         #controls { position: absolute; bottom: 20px; width: 100%; display: flex; justify-content: center; gap: 10px; z-index: 200; pointer-events: none; }
         .ctrl { pointer-events: auto; background: rgba(0,0,0,0.6); color: white; padding: 8px 12px; border-radius: 15px; border: 1px solid #666; font-size: 12px; text-transform: uppercase; }
+
+        /* Default Sizes */
+        #watch-box { top: 60px; right: 10px; width: 45vw; height: 30vh; }
+        #chat-box { bottom: 90px; left: 10px; width: 45vw; height: 40vh; border: 1px solid #0f0; }
     </style>
 </head>
 <body>
@@ -55,25 +59,23 @@ const html = `
     <div id="status-bar"><div class="badge" id="live-badge"><div class="dot"></div> <span id="status-text">READY</span></div></div>
 
     <div id="setup">
-        <h2>Stream Setup</h2>
-        <label>RTMP URL (e.g. rtmp://global...)</label>
-        <input id="rtmpUrl" placeholder="Paste Full URL Here">
+        <h2>Easy Setup</h2>
+        <label>RTMP URL (Paste once, I'll remember)</label>
+        <input id="rtmpUrl" placeholder="global.live.mmcdn...">
         
         <label>BROADCAST TOKEN (Key)</label>
         <input id="streamKey" placeholder="Paste Token Here">
         
-        <label>YOUR USERNAME (No .com, just name)</label>
-        <input id="myUser" placeholder="e.g. richsteve17">
+        <label>YOUR USERNAME</label>
+        <input id="myUser" placeholder="richsteve17">
         
-        <label>MONITOR USERNAME (Just name)</label>
-        <input id="watchUser" placeholder="e.g. othermodel">
+        <label>MONITOR USERNAME</label>
+        <input id="watchUser" placeholder="Other model">
         
         <button class="start-btn" onclick="startApp()">GO LIVE</button>
     </div>
 
-    <div id="watch-box" class="overlay-box">
-        <div class="drag-handle" data-target="watch-box"><span class="handle-title">Monitor</span><div class="win-ctrls"><button class="win-btn btn-min" onclick="resizeBox('watch-box', 'small')"></button><button class="win-btn btn-max" onclick="resizeBox('watch-box', 'large')"></button><button class="win-btn btn-close" onclick="closeBox('watch-box')"></button></div></div><iframe id="watch-frame"></iframe>
-    </div>
+    <div id="watch-box" class="overlay-box"><div class="drag-handle" data-target="watch-box"><span class="handle-title">Monitor</span><div class="win-ctrls"><button class="win-btn btn-min" onclick="resizeBox('watch-box', 'small')"></button><button class="win-btn btn-max" onclick="resizeBox('watch-box', 'large')"></button><button class="win-btn btn-close" onclick="closeBox('watch-box')"></button></div></div><iframe id="watch-frame"></iframe></div>
     <div id="chat-box" class="overlay-box"><div class="drag-handle" data-target="chat-box"><span class="handle-title">My Chat</span><div class="win-ctrls"><button class="win-btn btn-min" onclick="resizeBox('chat-box', 'small')"></button><button class="win-btn btn-max" onclick="resizeBox('chat-box', 'large')"></button></div></div><iframe id="chat-frame"></iframe></div>
     <div id="controls"><button class="ctrl" onclick="toggleCam()">Flip Cam</button><button class="ctrl" onclick="toggleOpacity()">Ghost Mode</button><button class="ctrl" onclick="location.reload()">Reset</button></div>
 
@@ -81,6 +83,15 @@ const html = `
         const socket = io({ transports: ["websocket"] });
         let mediaRecorder;
         
+        // --- AUTO-LOAD SAVED DATA ---
+        window.onload = () => {
+            if(localStorage.getItem('rtmpUrl')) document.getElementById('rtmpUrl').value = localStorage.getItem('rtmpUrl');
+            if(localStorage.getItem('streamKey')) document.getElementById('streamKey').value = localStorage.getItem('streamKey');
+            if(localStorage.getItem('myUser')) document.getElementById('myUser').value = localStorage.getItem('myUser');
+            if(localStorage.getItem('watchUser')) document.getElementById('watchUser').value = localStorage.getItem('watchUser');
+            initCam();
+        };
+
         function pickMimeType() {
             const candidates = ["video/mp4", "video/webm;codecs=h264", "video/webm"];
             return candidates.find(t => MediaRecorder.isTypeSupported(t)) || "";
@@ -96,7 +107,6 @@ const html = `
                 window.localStream = stream;
             } catch(e) { alert("Camera Error: " + e.message); }
         }
-        initCam();
 
         function startApp() {
             let rtmpUrl = document.getElementById('rtmpUrl').value.trim();
@@ -104,9 +114,20 @@ const html = `
             const myUser = document.getElementById('myUser').value.trim();
             const watchUser = document.getElementById('watchUser').value.trim();
 
-            if (rtmpUrl && !rtmpUrl.endsWith('/')) rtmpUrl += '/';
+            // --- AUTO-SAVE DATA ---
+            localStorage.setItem('rtmpUrl', rtmpUrl);
+            localStorage.setItem('streamKey', key);
+            localStorage.setItem('myUser', myUser);
+            localStorage.setItem('watchUser', watchUser);
+
+            // --- SMART URL FIXER ---
+            if (!rtmpUrl.toLowerCase().startsWith('rtmp://')) rtmpUrl = 'rtmp://' + rtmpUrl;
+            if (rtmpUrl.startsWith('RTMP://') || rtmpUrl.startsWith('Rtmp://')) rtmpUrl = 'rtmp://' + rtmpUrl.substring(7);
+            if (!rtmpUrl.endsWith('/')) rtmpUrl += '/';
+
             if (watchUser) { document.getElementById('watch-frame').src = 'https://chaturbate.com/embed/' + watchUser + '?bgcolor=black'; document.getElementById('watch-box').style.display = 'flex'; }
             if (myUser) { document.getElementById('chat-frame').src = 'https://chaturbate.com/popout/' + myUser + '/chat/'; document.getElementById('chat-box').style.display = 'flex'; }
+            
             document.getElementById('setup').style.display = 'none';
             if (key && rtmpUrl) startBroadcasting(rtmpUrl, key);
         }
@@ -157,14 +178,10 @@ io.on('connection', (socket) => {
         if (ffmpeg) ffmpeg.kill();
         console.log('Target:', data.target);
 
-        // BULLETPROOF ARGS: No complex flags, just basic stream settings
         const args = [
             '-i', '-',
-            
-            // Just force the size, don't worry about rotating manually
             '-vf', 'scale=1280:720,setsar=1', 
-            '-metadata:s:v', 'rotate=0',     // Strip "rotate" tag
-
+            '-metadata:s:v', 'rotate=0',
             '-c:v', 'libx264',
             '-preset', 'ultrafast',
             '-tune', 'zerolatency',
@@ -206,4 +223,4 @@ io.on('connection', (socket) => {
     socket.on('disconnect', () => { if (ffmpeg) ffmpeg.kill(); });
 });
 
-server.listen(port, () => console.log('Relay Bulletproof running on ' + port));
+server.listen(port, () => console.log('Relay Auto-Save running on ' + port));
