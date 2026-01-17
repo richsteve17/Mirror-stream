@@ -76,16 +76,21 @@ const html = `
         <h2>Easy Setup</h2>
         <label>RTMP URL (Paste once, I'll remember)</label>
         <input id="rtmpUrl" placeholder="global.live.mmcdn...">
-        
+
         <label>BROADCAST TOKEN (Key)</label>
         <input id="streamKey" placeholder="Paste Token Here">
-        
+
         <label>YOUR USERNAME</label>
         <input id="myUser" placeholder="richsteve17">
-        
+
         <label>MONITOR USERNAME</label>
         <input id="watchUser" placeholder="Other model">
-        
+
+        <div style="margin-top:15px;display:flex;align-items:center;gap:10px;">
+            <input type="checkbox" id="portraitMode" style="width:20px;height:20px;margin:0;">
+            <label for="portraitMode" style="margin:0;color:#0f0;">PORTRAIT MODE (rotate for landscape stream)</label>
+        </div>
+
         <button class="start-btn" onclick="startApp()">GO LIVE</button>
     </div>
 
@@ -123,6 +128,7 @@ const html = `
             if(localStorage.getItem('streamKey')) document.getElementById('streamKey').value = localStorage.getItem('streamKey');
             if(localStorage.getItem('myUser')) document.getElementById('myUser').value = localStorage.getItem('myUser');
             if(localStorage.getItem('watchUser')) document.getElementById('watchUser').value = localStorage.getItem('watchUser');
+            if(localStorage.getItem('portraitMode') === 'true') document.getElementById('portraitMode').checked = true;
             initCam();
         };
 
@@ -147,12 +153,14 @@ const html = `
             const key = document.getElementById('streamKey').value.trim();
             const myUser = document.getElementById('myUser').value.trim();
             const watchUser = document.getElementById('watchUser').value.trim();
+            const portraitMode = document.getElementById('portraitMode').checked;
 
             // --- AUTO-SAVE DATA ---
             localStorage.setItem('rtmpUrl', rtmpUrl);
             localStorage.setItem('streamKey', key);
             localStorage.setItem('myUser', myUser);
             localStorage.setItem('watchUser', watchUser);
+            localStorage.setItem('portraitMode', portraitMode);
 
             // --- SMART URL FIXER ---
             if (!rtmpUrl.toLowerCase().startsWith('rtmp://')) rtmpUrl = 'rtmp://' + rtmpUrl;
@@ -184,7 +192,8 @@ const html = `
                 mediaRecorder = mime ? new MediaRecorder(window.localStream, { mimeType: mime }) : new MediaRecorder(window.localStream);
             } catch (e) { alert("Recorder Error: " + e.message); return; }
 
-            socket.emit('config', { target: url + key, format: mime }, (response) => {
+            const portrait = document.getElementById('portraitMode').checked;
+            socket.emit('config', { target: url + key, format: mime, portrait: portrait }, (response) => {
                 if (!response || !response.ok) { alert("Server Error"); return; }
                 mediaRecorder.start(250); 
                 badge.classList.add('live');
@@ -264,16 +273,36 @@ io.on('connection', (socket) => {
         console.log('=== NEW STREAM ===');
         console.log('Target:', data.target);
         console.log('Format:', data.format);
+        console.log('Portrait mode:', data.portrait);
 
-        const args = [
-            '-loglevel', 'verbose',
-            '-fflags', '+genpts+discardcorrupt',
-            '-i', '-',
-            '-c:v', 'copy',
-            '-c:a', 'copy',
-            '-f', 'flv',
-            data.target
-        ];
+        // Build FFmpeg args - if portrait mode, we need to rotate (requires encoding)
+        let args;
+        if (data.portrait) {
+            args = [
+                '-loglevel', 'verbose',
+                '-fflags', '+genpts+discardcorrupt',
+                '-i', '-',
+                '-vf', 'transpose=1',
+                '-c:v', 'libx264',
+                '-preset', 'ultrafast',
+                '-tune', 'zerolatency',
+                '-b:v', '2500k',
+                '-c:a', 'aac',
+                '-b:a', '128k',
+                '-f', 'flv',
+                data.target
+            ];
+        } else {
+            args = [
+                '-loglevel', 'verbose',
+                '-fflags', '+genpts+discardcorrupt',
+                '-i', '-',
+                '-c:v', 'copy',
+                '-c:a', 'copy',
+                '-f', 'flv',
+                data.target
+            ];
+        }
 
         try {
             ffmpeg = spawn(ffmpegPath, args);
