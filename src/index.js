@@ -160,13 +160,13 @@ const html = `
             if (!rtmpUrl.endsWith('/')) rtmpUrl += '/';
 
             if (watchUser) {
-                // Chaturbate official embed - use the affiliate embed format
-                document.getElementById('watch-frame').src = 'https://chaturbate.com/in/?tour=dT8X&campaign=8sKXp&room=' + watchUser;
+                // Use proxy to bypass X-Frame-Options
+                document.getElementById('watch-frame').src = '/proxy?url=' + encodeURIComponent('https://chaturbate.com/' + watchUser + '/');
                 document.getElementById('watch-box').style.display = 'flex';
             }
             if (myUser) {
-                // Chat - use fullvideo which sometimes allows embedding
-                document.getElementById('chat-frame').src = 'https://chaturbate.com/fullvideo/?b=' + myUser;
+                // Use proxy for chat too
+                document.getElementById('chat-frame').src = '/proxy?url=' + encodeURIComponent('https://chaturbate.com/' + myUser + '/');
                 document.getElementById('chat-box').style.display = 'flex';
             }
             
@@ -211,6 +211,42 @@ const html = `
 `;
 
 app.get('/', (req, res) => res.send(html));
+
+// Proxy endpoint to bypass X-Frame-Options
+app.get('/proxy', async (req, res) => {
+    const url = req.query.url;
+    if (!url || !url.includes('chaturbate.com')) {
+        return res.status(400).send('Invalid URL');
+    }
+
+    try {
+        const response = await fetch(url, {
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1'
+            }
+        });
+
+        let html = await response.text();
+
+        // Rewrite relative URLs to absolute
+        html = html.replace(/href="\//g, 'href="https://chaturbate.com/');
+        html = html.replace(/src="\//g, 'src="https://chaturbate.com/');
+
+        // Remove frame-busting scripts
+        html = html.replace(/if\s*\(\s*top\s*!==?\s*self\s*\)/g, 'if(false)');
+        html = html.replace(/if\s*\(\s*window\.top\s*!==?\s*window\.self\s*\)/g, 'if(false)');
+
+        res.set({
+            'Content-Type': 'text/html',
+            'X-Frame-Options': 'ALLOWALL',
+            'Content-Security-Policy': ''
+        });
+        res.send(html);
+    } catch (e) {
+        console.error('Proxy error:', e);
+        res.status(500).send('Proxy error: ' + e.message);
+    }
+});
 
 io.on('connection', (socket) => {
     let ffmpeg;
