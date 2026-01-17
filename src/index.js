@@ -89,8 +89,8 @@ const html = `
         <button class="start-btn" onclick="startApp()">GO LIVE</button>
     </div>
 
-    <div id="watch-box" class="overlay-box"><div class="drag-handle" data-target="watch-box"><span class="handle-title">Monitor</span><div class="win-ctrls"><button class="win-btn btn-min" onclick="resizeBox('watch-box', 'small')"></button><button class="win-btn btn-max" onclick="resizeBox('watch-box', 'large')"></button><button class="win-btn btn-close" onclick="closeBox('watch-box')"></button></div></div><div style="flex:1;display:flex;align-items:center;justify-content:center;"><button id="open-watch-btn" style="padding:15px 30px;font-size:16px;background:#0f0;border:none;border-radius:8px;font-weight:bold;">Open Monitor</button></div></div>
-    <div id="chat-box" class="overlay-box"><div class="drag-handle" data-target="chat-box"><span class="handle-title">My Chat</span><div class="win-ctrls"><button class="win-btn btn-min" onclick="resizeBox('chat-box', 'small')"></button><button class="win-btn btn-max" onclick="resizeBox('chat-box', 'large')"></button></div></div><div style="flex:1;display:flex;align-items:center;justify-content:center;"><button id="open-chat-btn" style="padding:15px 30px;font-size:16px;background:#0f0;border:none;border-radius:8px;font-weight:bold;">Open Chat</button></div></div>
+    <div id="watch-box" class="overlay-box"><div class="drag-handle" data-target="watch-box"><span class="handle-title">Monitor</span><div class="win-ctrls"><button class="win-btn btn-min" onclick="resizeBox('watch-box', 'small')"></button><button class="win-btn btn-max" onclick="resizeBox('watch-box', 'large')"></button><button class="win-btn btn-close" onclick="closeBox('watch-box')"></button></div></div><iframe id="watch-frame" allow="autoplay; encrypted-media" allowfullscreen></iframe></div>
+    <div id="chat-box" class="overlay-box"><div class="drag-handle" data-target="chat-box"><span class="handle-title">My Chat</span><div class="win-ctrls"><button class="win-btn btn-min" onclick="resizeBox('chat-box', 'small')"></button><button class="win-btn btn-max" onclick="resizeBox('chat-box', 'large')"></button></div></div><iframe id="chat-frame"></iframe></div>
     <div id="controls"><button class="ctrl" onclick="toggleCam()">Flip Cam</button><button class="ctrl" onclick="toggleOpacity()">Ghost Mode</button><button class="ctrl" onclick="location.reload()">Reset</button></div>
 
     <script>
@@ -160,15 +160,13 @@ const html = `
             if (!rtmpUrl.endsWith('/')) rtmpUrl += '/';
 
             if (watchUser) {
-                const watchBtn = document.getElementById('open-watch-btn');
-                const watchUrl = 'https://chaturbate.com/' + watchUser + '/';
-                watchBtn.onclick = () => { window.open(watchUrl, '_blank'); };
+                // Chaturbate official embed player
+                document.getElementById('watch-frame').src = 'https://chaturbate.com/embed/' + watchUser + '/?join_overlay=1&bgcolor=black';
                 document.getElementById('watch-box').style.display = 'flex';
             }
             if (myUser) {
-                const chatBtn = document.getElementById('open-chat-btn');
-                const chatUrl = 'https://chaturbate.com/popout/' + myUser + '/chat/';
-                chatBtn.onclick = () => { window.open(chatUrl, '_blank'); };
+                // Chat popup embed
+                document.getElementById('chat-frame').src = 'https://chaturbate.com/embed/' + myUser + '/chat/';
                 document.getElementById('chat-box').style.display = 'flex';
             }
             
