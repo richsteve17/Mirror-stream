@@ -80,9 +80,29 @@ const html = `
     <div id="controls"><button class="ctrl" onclick="toggleCam()">Flip Cam</button><button class="ctrl" onclick="toggleOpacity()">Ghost Mode</button><button class="ctrl" onclick="location.reload()">Reset</button></div>
 
     <script>
-        const socket = io({ transports: ["websocket"] });
+        const socket = io({ transports: ["websocket"], reconnection: true, reconnectionAttempts: 10, reconnectionDelay: 1000 });
         let mediaRecorder;
-        
+
+        // --- SOCKET ERROR HANDLING ---
+        socket.on('error', (msg) => {
+            console.error('Server error:', msg);
+            document.getElementById('status-text').innerText = 'ERROR: ' + msg;
+            document.getElementById('live-badge').classList.remove('live');
+            document.getElementById('live-badge').style.borderColor = '#f80';
+        });
+        socket.on('streaming', () => {
+            document.getElementById('status-text').innerText = 'STREAMING';
+        });
+        socket.on('disconnect', (reason) => {
+            console.log('Disconnected:', reason);
+            document.getElementById('status-text').innerText = 'DISCONNECTED';
+            document.getElementById('live-badge').classList.remove('live');
+        });
+        socket.on('reconnect', () => {
+            console.log('Reconnected');
+            document.getElementById('status-text').innerText = 'RECONNECTED';
+        });
+
         // --- AUTO-LOAD SAVED DATA ---
         window.onload = () => {
             if(localStorage.getItem('rtmpUrl')) document.getElementById('rtmpUrl').value = localStorage.getItem('rtmpUrl');
@@ -173,20 +193,32 @@ app.get('/', (req, res) => res.send(html));
 io.on('connection', (socket) => {
     let ffmpeg;
     let isReady = false;
+    let dataReceived = 0;
+    let lastDataTime = Date.now();
+
+    console.log('Client connected:', socket.id);
 
     socket.on('config', (data, ack) => {
-        if (ffmpeg) ffmpeg.kill();
+        if (ffmpeg) {
+            console.log('Killing previous FFmpeg');
+            ffmpeg.kill();
+        }
+        console.log('=== NEW STREAM ===');
         console.log('Target:', data.target);
+        console.log('Format:', data.format);
 
         const args = [
+            '-fflags', '+genpts+discardcorrupt',
             '-i', '-',
-            '-vf', 'scale=1280:720,setsar=1', 
+            '-vf', 'scale=1280:720,setsar=1',
             '-metadata:s:v', 'rotate=0',
             '-c:v', 'libx264',
             '-preset', 'ultrafast',
             '-tune', 'zerolatency',
             '-pix_fmt', 'yuv420p',
             '-profile:v', 'baseline',
+            '-g', '60',
+            '-keyint_min', '60',
             '-b:v', '2500k',
             '-maxrate', '2500k',
             '-bufsize', '5000k',
@@ -200,27 +232,58 @@ io.on('connection', (socket) => {
 
         try {
             ffmpeg = spawn(ffmpegPath, args);
-            
-            ffmpeg.stderr.on('data', (d) => console.log(d.toString()));
-            ffmpeg.on('close', (c) => { console.log('Exit:', c); isReady = false; });
-            ffmpeg.stdin.on('error', (e) => {}); 
+
+            ffmpeg.stderr.on('data', (d) => {
+                const msg = d.toString();
+                console.log(msg);
+                // Notify client of RTMP errors
+                if (msg.includes('Connection refused') || msg.includes('Failed to connect')) {
+                    socket.emit('error', 'RTMP connection failed - check your stream key');
+                }
+                if (msg.includes('frame=')) {
+                    // Stream is actually working
+                    socket.emit('streaming', true);
+                }
+            });
+
+            ffmpeg.on('close', (code, signal) => {
+                console.log('FFmpeg closed - code:', code, 'signal:', signal);
+                console.log('Total data received:', dataReceived, 'bytes');
+                isReady = false;
+                socket.emit('error', 'Stream ended - FFmpeg exited');
+            });
+
+            ffmpeg.on('error', (e) => {
+                console.log('FFmpeg error:', e.message);
+                socket.emit('error', 'FFmpeg error: ' + e.message);
+            });
+
+            ffmpeg.stdin.on('error', (e) => {
+                console.log('stdin error:', e.message);
+            });
 
             isReady = true;
             if (ack) ack({ ok: true });
 
         } catch (e) {
             console.error("Spawn Error:", e);
-            if(ack) ack({ ok: false });
+            if(ack) ack({ ok: false, error: e.message });
         }
     });
 
     socket.on('binarystream', (data) => {
         if (isReady && ffmpeg && ffmpeg.stdin.writable) {
+            dataReceived += data.byteLength;
+            lastDataTime = Date.now();
             ffmpeg.stdin.write(Buffer.from(data));
         }
     });
 
-    socket.on('disconnect', () => { if (ffmpeg) ffmpeg.kill(); });
+    socket.on('disconnect', (reason) => {
+        console.log('Client disconnected:', reason);
+        console.log('Total data received before disconnect:', dataReceived, 'bytes');
+        if (ffmpeg) ffmpeg.kill();
+    });
 });
 
 server.listen(port, () => console.log('Relay Auto-Save running on ' + port));
