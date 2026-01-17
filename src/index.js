@@ -1,8 +1,22 @@
 import express from 'express';
 import { Server } from 'socket.io';
-import { spawn } from 'child_process';
-import ffmpegPath from 'ffmpeg-static';
+import { spawn, execSync } from 'child_process';
 import http from 'http';
+
+// Detect ffmpeg - prefer system over ffmpeg-static (which crashes on Render)
+let ffmpegPath = 'ffmpeg';
+try {
+    execSync('ffmpeg -version', { stdio: 'ignore' });
+    console.log('Using system ffmpeg');
+} catch {
+    try {
+        const { default: ffmpegStatic } = await import('ffmpeg-static');
+        ffmpegPath = ffmpegStatic;
+        console.log('Using ffmpeg-static:', ffmpegPath);
+    } catch {
+        console.log('No ffmpeg found, will try system ffmpeg');
+    }
+}
 
 const app = express();
 const server = http.createServer(app);
