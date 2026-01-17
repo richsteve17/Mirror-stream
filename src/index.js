@@ -1,8 +1,22 @@
 import express from 'express';
 import { Server } from 'socket.io';
-import { spawn } from 'child_process';
-import ffmpegPath from 'ffmpeg-static';
+import { spawn, execSync } from 'child_process';
 import http from 'http';
+
+// Detect ffmpeg - prefer system over ffmpeg-static (which crashes on Render)
+let ffmpegPath = 'ffmpeg';
+try {
+    execSync('ffmpeg -version', { stdio: 'ignore' });
+    console.log('Using system ffmpeg');
+} catch {
+    try {
+        const { default: ffmpegStatic } = await import('ffmpeg-static');
+        ffmpegPath = ffmpegStatic;
+        console.log('Using ffmpeg-static:', ffmpegPath);
+    } catch {
+        console.log('No ffmpeg found, will try system ffmpeg');
+    }
+}
 
 const app = express();
 const server = http.createServer(app);
@@ -62,21 +76,26 @@ const html = `
         <h2>Easy Setup</h2>
         <label>RTMP URL (Paste once, I'll remember)</label>
         <input id="rtmpUrl" placeholder="global.live.mmcdn...">
-        
+
         <label>BROADCAST TOKEN (Key)</label>
         <input id="streamKey" placeholder="Paste Token Here">
-        
+
         <label>YOUR USERNAME</label>
         <input id="myUser" placeholder="richsteve17">
-        
+
         <label>MONITOR USERNAME</label>
         <input id="watchUser" placeholder="Other model">
-        
+
+        <div style="margin-top:15px;display:flex;align-items:center;gap:10px;">
+            <input type="checkbox" id="portraitMode" style="width:20px;height:20px;margin:0;">
+            <label for="portraitMode" style="margin:0;color:#0f0;">PORTRAIT MODE (rotate for landscape stream)</label>
+        </div>
+
         <button class="start-btn" onclick="startApp()">GO LIVE</button>
     </div>
 
-    <div id="watch-box" class="overlay-box"><div class="drag-handle" data-target="watch-box"><span class="handle-title">Monitor</span><div class="win-ctrls"><button class="win-btn btn-min" onclick="resizeBox('watch-box', 'small')"></button><button class="win-btn btn-max" onclick="resizeBox('watch-box', 'large')"></button><button class="win-btn btn-close" onclick="closeBox('watch-box')"></button></div></div><iframe id="watch-frame"></iframe></div>
-    <div id="chat-box" class="overlay-box"><div class="drag-handle" data-target="chat-box"><span class="handle-title">My Chat</span><div class="win-ctrls"><button class="win-btn btn-min" onclick="resizeBox('chat-box', 'small')"></button><button class="win-btn btn-max" onclick="resizeBox('chat-box', 'large')"></button></div></div><iframe id="chat-frame"></iframe></div>
+    <div id="watch-box" class="overlay-box"><div class="drag-handle" data-target="watch-box"><span class="handle-title">Monitor</span><div class="win-ctrls"><button class="win-btn btn-min" onclick="resizeBox('watch-box', 'small')"></button><button class="win-btn btn-max" onclick="resizeBox('watch-box', 'large')"></button><button class="win-btn btn-close" onclick="closeBox('watch-box')"></button></div></div><iframe id="watch-frame" sandbox="allow-scripts allow-same-origin allow-popups allow-forms" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen referrerpolicy="no-referrer"></iframe></div>
+    <div id="chat-box" class="overlay-box"><div class="drag-handle" data-target="chat-box"><span class="handle-title">My Chat</span><div class="win-ctrls"><button class="win-btn btn-min" onclick="resizeBox('chat-box', 'small')"></button><button class="win-btn btn-max" onclick="resizeBox('chat-box', 'large')"></button></div></div><iframe id="chat-frame" sandbox="allow-scripts allow-same-origin allow-popups allow-forms" referrerpolicy="no-referrer"></iframe></div>
     <div id="controls"><button class="ctrl" onclick="toggleCam()">Flip Cam</button><button class="ctrl" onclick="toggleOpacity()">Ghost Mode</button><button class="ctrl" onclick="location.reload()">Reset</button></div>
 
     <script>
@@ -109,6 +128,7 @@ const html = `
             if(localStorage.getItem('streamKey')) document.getElementById('streamKey').value = localStorage.getItem('streamKey');
             if(localStorage.getItem('myUser')) document.getElementById('myUser').value = localStorage.getItem('myUser');
             if(localStorage.getItem('watchUser')) document.getElementById('watchUser').value = localStorage.getItem('watchUser');
+            if(localStorage.getItem('portraitMode') === 'true') document.getElementById('portraitMode').checked = true;
             initCam();
         };
 
@@ -133,20 +153,23 @@ const html = `
             const key = document.getElementById('streamKey').value.trim();
             const myUser = document.getElementById('myUser').value.trim();
             const watchUser = document.getElementById('watchUser').value.trim();
+            const portraitMode = document.getElementById('portraitMode').checked;
 
             // --- AUTO-SAVE DATA ---
             localStorage.setItem('rtmpUrl', rtmpUrl);
             localStorage.setItem('streamKey', key);
             localStorage.setItem('myUser', myUser);
             localStorage.setItem('watchUser', watchUser);
+            localStorage.setItem('portraitMode', portraitMode);
 
             // --- SMART URL FIXER ---
             if (!rtmpUrl.toLowerCase().startsWith('rtmp://')) rtmpUrl = 'rtmp://' + rtmpUrl;
             if (rtmpUrl.startsWith('RTMP://') || rtmpUrl.startsWith('Rtmp://')) rtmpUrl = 'rtmp://' + rtmpUrl.substring(7);
             if (!rtmpUrl.endsWith('/')) rtmpUrl += '/';
 
-            if (watchUser) { document.getElementById('watch-frame').src = 'https://chaturbate.com/embed/' + watchUser + '?bgcolor=black'; document.getElementById('watch-box').style.display = 'flex'; }
-            if (myUser) { document.getElementById('chat-frame').src = 'https://chaturbate.com/popout/' + myUser + '/chat/'; document.getElementById('chat-box').style.display = 'flex'; }
+            // Chaturbate blocks all embedding via Cloudflare - hide broken overlays
+            document.getElementById('watch-box').style.display = 'none';
+            document.getElementById('chat-box').style.display = 'none';
             
             document.getElementById('setup').style.display = 'none';
             if (key && rtmpUrl) startBroadcasting(rtmpUrl, key);
@@ -162,7 +185,8 @@ const html = `
                 mediaRecorder = mime ? new MediaRecorder(window.localStream, { mimeType: mime }) : new MediaRecorder(window.localStream);
             } catch (e) { alert("Recorder Error: " + e.message); return; }
 
-            socket.emit('config', { target: url + key, format: mime }, (response) => {
+            const portrait = document.getElementById('portraitMode').checked;
+            socket.emit('config', { target: url + key, format: mime, portrait: portrait }, (response) => {
                 if (!response || !response.ok) { alert("Server Error"); return; }
                 mediaRecorder.start(250); 
                 badge.classList.add('live');
@@ -190,6 +214,42 @@ const html = `
 
 app.get('/', (req, res) => res.send(html));
 
+// Proxy endpoint to bypass X-Frame-Options
+app.get('/proxy', async (req, res) => {
+    const url = req.query.url;
+    if (!url || !url.includes('chaturbate.com')) {
+        return res.status(400).send('Invalid URL');
+    }
+
+    try {
+        const response = await fetch(url, {
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1'
+            }
+        });
+
+        let html = await response.text();
+
+        // Rewrite relative URLs to absolute
+        html = html.replace(/href="\//g, 'href="https://chaturbate.com/');
+        html = html.replace(/src="\//g, 'src="https://chaturbate.com/');
+
+        // Remove frame-busting scripts
+        html = html.replace(/if\s*\(\s*top\s*!==?\s*self\s*\)/g, 'if(false)');
+        html = html.replace(/if\s*\(\s*window\.top\s*!==?\s*window\.self\s*\)/g, 'if(false)');
+
+        res.set({
+            'Content-Type': 'text/html',
+            'X-Frame-Options': 'ALLOWALL',
+            'Content-Security-Policy': ''
+        });
+        res.send(html);
+    } catch (e) {
+        console.error('Proxy error:', e);
+        res.status(500).send('Proxy error: ' + e.message);
+    }
+});
+
 io.on('connection', (socket) => {
     let ffmpeg;
     let isReady = false;
@@ -206,33 +266,36 @@ io.on('connection', (socket) => {
         console.log('=== NEW STREAM ===');
         console.log('Target:', data.target);
         console.log('Format:', data.format);
+        console.log('Portrait mode:', data.portrait);
 
-        const args = [
-            '-loglevel', 'verbose',
-            '-fflags', '+genpts+discardcorrupt+nobuffer',
-            '-probesize', '5000000',
-            '-analyzeduration', '5000000',
-            '-i', '-',
-            '-vf', 'scale=1280:720,setsar=1',
-            '-metadata:s:v', 'rotate=0',
-            '-c:v', 'libx264',
-            '-preset', 'ultrafast',
-            '-tune', 'zerolatency',
-            '-pix_fmt', 'yuv420p',
-            '-profile:v', 'baseline',
-            '-g', '60',
-            '-keyint_min', '60',
-            '-b:v', '2500k',
-            '-maxrate', '2500k',
-            '-bufsize', '5000k',
-            '-c:a', 'aac',
-            '-ar', '44100',
-            '-b:a', '128k',
-            '-flvflags', 'no_duration_filesize',
-            '-rtmp_live', 'live',
-            '-f', 'flv',
-            data.target
-        ];
+        // Build FFmpeg args - if portrait mode, we need to rotate (requires encoding)
+        let args;
+        if (data.portrait) {
+            args = [
+                '-loglevel', 'verbose',
+                '-fflags', '+genpts+discardcorrupt',
+                '-i', '-',
+                '-vf', 'transpose=1',
+                '-c:v', 'libx264',
+                '-preset', 'ultrafast',
+                '-tune', 'zerolatency',
+                '-b:v', '2500k',
+                '-c:a', 'aac',
+                '-b:a', '128k',
+                '-f', 'flv',
+                data.target
+            ];
+        } else {
+            args = [
+                '-loglevel', 'verbose',
+                '-fflags', '+genpts+discardcorrupt',
+                '-i', '-',
+                '-c:v', 'copy',
+                '-c:a', 'copy',
+                '-f', 'flv',
+                data.target
+            ];
+        }
 
         try {
             ffmpeg = spawn(ffmpegPath, args);
