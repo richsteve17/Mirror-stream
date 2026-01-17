@@ -23,7 +23,7 @@ const html = `
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Stream Relay Pro</title>
+    <title>Stream Relay Custom</title>
     <script src="/socket.io/socket.io.js"></script>
     <style>
         body { margin: 0; background: #000; overflow: hidden; height: 100vh; width: 100vw; font-family: sans-serif; }
@@ -59,7 +59,6 @@ const html = `
         
         #controls { position: absolute; bottom: 20px; width: 100%; display: flex; justify-content: center; gap: 10px; z-index: 200; pointer-events: none; }
         .ctrl { pointer-events: auto; background: rgba(0,0,0,0.6); color: white; padding: 8px 12px; border-radius: 15px; border: 1px solid #666; font-size: 12px; text-transform: uppercase; }
-        .ctrl:active { background: #fff; color: #000; }
     </style>
 </head>
 <body>
@@ -68,9 +67,19 @@ const html = `
 
     <div id="setup">
         <h2>Stream Setup</h2>
-        <label>STREAM KEY</label><input id="streamKey" placeholder="Paste Key Here">
-        <label>CHAT USERNAME</label><input id="myUser" placeholder="Your Username">
-        <label>WATCH USERNAME</label><input id="watchUser" placeholder="Other Performer">
+        
+        <label>RTMP URL (From Chaturbate)</label>
+        <input id="rtmpUrl" placeholder="rtmp://live.chaturbate.com/live/">
+        
+        <label>BROADCAST TOKEN (Stream Key)</label>
+        <input id="streamKey" placeholder="Paste Token Here">
+        
+        <label>CHAT USERNAME</label>
+        <input id="myUser" placeholder="Your Username">
+        
+        <label>WATCH USERNAME</label>
+        <input id="watchUser" placeholder="Other Performer">
+        
         <button class="start-btn" onclick="startApp()">GO LIVE</button>
     </div>
 
@@ -120,7 +129,6 @@ const html = `
 
         async function initCam() {
             try {
-                // Request Landscape Resolution
                 const stream = await navigator.mediaDevices.getUserMedia({ 
                     video: { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: 30 }, 
                     audio: true 
@@ -132,10 +140,16 @@ const html = `
         initCam();
 
         function startApp() {
-            // TRIM SPACES - Critical Fix
+            // TRIM SPACES EVERYWHERE
+            let rtmpUrl = document.getElementById('rtmpUrl').value.trim();
             const key = document.getElementById('streamKey').value.trim();
             const myUser = document.getElementById('myUser').value.trim();
             const watchUser = document.getElementById('watchUser').value.trim();
+
+            // Ensure URL ends with slash if user forgot it
+            if (rtmpUrl && !rtmpUrl.endsWith('/')) {
+                rtmpUrl += '/';
+            }
 
             if (watchUser) {
                 document.getElementById('watch-frame').src = 'https://chaturbate.com/embed/' + watchUser + '?bgcolor=black';
@@ -146,16 +160,15 @@ const html = `
                 document.getElementById('chat-box').style.display = 'flex';
             }
             document.getElementById('setup').style.display = 'none';
-            if (key) startBroadcasting(key);
+            if (key && rtmpUrl) startBroadcasting(rtmpUrl, key);
         }
 
-        function startBroadcasting(key) {
+        function startBroadcasting(url, key) {
             const statusText = document.getElementById('status-text');
             const badge = document.getElementById('live-badge');
             statusText.innerText = "INITIALIZING...";
 
             let mime = pickMimeType();
-            
             try {
                 mediaRecorder = mime ? new MediaRecorder(window.localStream, { mimeType: mime }) : new MediaRecorder(window.localStream);
             } catch (e) {
@@ -163,8 +176,11 @@ const html = `
                 return;
             }
 
+            // Combine URL + Key
+            const fullTarget = url + key;
+
             socket.emit('config', { 
-                rtmp: 'rtmp://live.chaturbate.com/live/' + key,
+                target: fullTarget,
                 format: mime 
             }, (response) => {
                 if (!response || !response.ok) {
@@ -226,18 +242,13 @@ io.on('connection', (socket) => {
     socket.on('config', (data, ack) => {
         if (ffmpeg) ffmpeg.kill();
         
-        console.log('Spawning FFmpeg. Target:', data.rtmp);
+        console.log('Spawning FFmpeg. Full Target:', data.target);
 
-        // HARDENED FFMPEG ARGS
         const args = [
             '-i', '-',
-
-            // 1. ROTATION FIX (Physically rotate pixels 90 deg clockwise)
             '-noautorotate',
             '-vf', 'transpose=1,scale=1280:720,setsar=1',
             '-metadata:s:v', 'rotate=0',
-
-            // 2. VIDEO ENCODING (Hardened for Compatibility)
             '-c:v', 'libx264',
             '-preset', 'ultrafast',
             '-tune', 'zerolatency',
@@ -249,26 +260,20 @@ io.on('connection', (socket) => {
             '-b:v', '2500k',
             '-maxrate', '2500k',
             '-bufsize', '5000k',
-
-            // 3. AUDIO ENCODING
             '-c:a', 'aac',
             '-ar', '44100',
             '-b:a', '128k',
-
-            // 4. RTMP OUTPUT
             '-flvflags', 'no_duration_filesize',
             '-f', 'flv',
-            data.rtmp
+            data.target // Use the dynamic full target (URL + Key)
         ];
 
         try {
             ffmpeg = spawn(ffmpegPath, args);
             
-            // LOGGING: No truncation, see everything
             ffmpeg.stderr.on('data', (d) => console.log('FFmpeg:', d.toString()));
-            ffmpeg.stdin.on('error', (e) => console.log('FFmpeg stdin error:', e.code, e.message));
-            ffmpeg.on('close', (code, signal) => console.log('FFmpeg exited. code:', code, 'signal:', signal));
-            ffmpeg.on('error', (e) => console.log('FFmpeg spawn error:', e.message));
+            ffmpeg.stdin.on('error', (e) => console.log('FFmpeg stdin error:', e.code));
+            ffmpeg.on('close', (c) => console.log('FFmpeg exited:', c));
 
             isReady = true;
             if (ack) ack({ ok: true });
@@ -298,4 +303,4 @@ io.on('connection', (socket) => {
     });
 });
 
-server.listen(port, () => console.log('Relay Pro running on ' + port));
+server.listen(port, () => console.log('Relay Custom running on ' + port));
