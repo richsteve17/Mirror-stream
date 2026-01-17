@@ -168,13 +168,12 @@ const html = `
             if (!rtmpUrl.endsWith('/')) rtmpUrl += '/';
 
             if (watchUser) {
-                // Use proxy to bypass X-Frame-Options
-                document.getElementById('watch-frame').src = '/proxy?url=' + encodeURIComponent('https://chaturbate.com/' + watchUser + '/');
-                document.getElementById('watch-box').style.display = 'flex';
+                // Hide monitor box - Chaturbate blocks all embedding
+                document.getElementById('watch-box').style.display = 'none';
             }
             if (myUser) {
-                // Use proxy for chat too
-                document.getElementById('chat-frame').src = '/proxy?url=' + encodeURIComponent('https://chaturbate.com/' + myUser + '/');
+                // Try chat-only popout URL through proxy
+                document.getElementById('chat-frame').src = '/proxy?url=' + encodeURIComponent('https://chaturbate.com/popout/' + myUser + '/chat/');
                 document.getElementById('chat-box').style.display = 'flex';
             }
             
