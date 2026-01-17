@@ -208,7 +208,10 @@ io.on('connection', (socket) => {
         console.log('Format:', data.format);
 
         const args = [
-            '-fflags', '+genpts+discardcorrupt',
+            '-loglevel', 'verbose',
+            '-fflags', '+genpts+discardcorrupt+nobuffer',
+            '-probesize', '5000000',
+            '-analyzeduration', '5000000',
             '-i', '-',
             '-vf', 'scale=1280:720,setsar=1',
             '-metadata:s:v', 'rotate=0',
@@ -226,6 +229,7 @@ io.on('connection', (socket) => {
             '-ar', '44100',
             '-b:a', '128k',
             '-flvflags', 'no_duration_filesize',
+            '-rtmp_live', 'live',
             '-f', 'flv',
             data.target
         ];
