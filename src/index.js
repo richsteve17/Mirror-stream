@@ -25,22 +25,40 @@ const html = `
     <title>Mirror Stream</title>
     <script src="/socket.io/socket.io.js"></script>
     <style>
-        body { margin: 0; background: #000; overflow: hidden; height: 100vh; width: 100vw; font-family: sans-serif; }
+        * { box-sizing: border-box; }
+        body { margin: 0; background: #000; overflow: hidden; height: 100vh; width: 100vw; font-family: -apple-system, BlinkMacSystemFont, sans-serif; }
         video { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); z-index: 1; }
-        #status-bar { position: absolute; top: 0; left: 0; width: 100%; display: flex; justify-content: center; padding-top: 5px; z-index: 50; pointer-events: none; }
-        .badge { background: rgba(0,0,0,0.6); color: #888; border: 1px solid #444; padding: 5px 15px; border-radius: 20px; font-size: 12px; font-weight: bold; display: flex; align-items: center; gap: 8px; backdrop-filter: blur(4px); }
+
+        #status-bar { position: absolute; top: 0; left: 0; width: 100%; display: flex; justify-content: center; padding-top: 10px; z-index: 50; pointer-events: none; }
+        .badge { background: rgba(0,0,0,0.7); color: #888; border: 1px solid #444; padding: 6px 16px; border-radius: 20px; font-size: 12px; font-weight: bold; display: flex; align-items: center; gap: 8px; backdrop-filter: blur(4px); }
         .dot { width: 8px; height: 8px; border-radius: 50%; background: #555; }
-        .badge.live { color: #fff; border-color: #f00; background: rgba(200,0,0,0.5); }
-        .badge.live .dot { background: #f00; box-shadow: 0 0 8px #f00; }
+        .badge.live { color: #fff; border-color: #f00; background: rgba(200,0,0,0.6); }
+        .badge.live .dot { background: #f00; box-shadow: 0 0 8px #f00; animation: pulse 1s infinite; }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
 
-        #setup { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.95); z-index: 300; display: flex; flex-direction: column; align-items: center; justify-content: center; color: white; overflow-y: auto; }
+        #setup { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.95); z-index: 300; display: flex; flex-direction: column; align-items: center; justify-content: flex-start; color: white; overflow-y: auto; padding: 20px; padding-top: 50px; }
         #setup.hidden { display: none; }
-        input[type="text"] { padding: 12px; margin: 8px; font-size: 16px; width: 80%; max-width: 300px; border-radius: 5px; border: none; }
-        label { color: #aaa; font-size: 12px; margin-top: 15px; }
-        button.start-btn { margin-top: 20px; padding: 15px 40px; font-size: 18px; background: #0f0; border: none; font-weight: bold; border-radius: 5px; }
+        #setup h2 { margin: 0 0 5px 0; font-size: 24px; }
+        #setup .subtitle { color: #666; font-size: 12px; margin-bottom: 20px; }
 
-        #controls { position: absolute; bottom: 20px; width: 100%; display: flex; justify-content: center; gap: 10px; z-index: 200; pointer-events: none; }
-        .ctrl { pointer-events: auto; background: rgba(0,0,0,0.6); color: white; padding: 8px 12px; border-radius: 15px; border: 1px solid #666; font-size: 12px; text-transform: uppercase; }
+        .form-group { width: 100%; max-width: 320px; margin-bottom: 15px; }
+        .form-group label { display: block; color: #888; font-size: 11px; margin-bottom: 5px; text-transform: uppercase; letter-spacing: 0.5px; }
+        .form-group input, .form-group select { width: 100%; padding: 12px; font-size: 16px; border-radius: 8px; border: 1px solid #333; background: #1a1a1a; color: #fff; }
+        .form-group input::placeholder { color: #555; }
+        .form-group select { appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23888' d='M6 8L1 3h10z'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 12px center; }
+
+        .form-row { display: flex; gap: 10px; width: 100%; max-width: 320px; }
+        .form-row .form-group { flex: 1; margin-bottom: 15px; }
+
+        .section-title { color: #666; font-size: 10px; text-transform: uppercase; letter-spacing: 1px; margin: 20px 0 10px 0; width: 100%; max-width: 320px; border-top: 1px solid #333; padding-top: 20px; }
+
+        button.start-btn { margin-top: 25px; padding: 16px 50px; font-size: 18px; background: #00cc00; color: #000; border: none; font-weight: bold; border-radius: 30px; cursor: pointer; }
+        button.start-btn:active { background: #00aa00; }
+
+        #controls { position: absolute; bottom: 25px; width: 100%; display: flex; justify-content: center; gap: 12px; z-index: 200; pointer-events: none; flex-wrap: wrap; padding: 0 10px; }
+        .ctrl { pointer-events: auto; background: rgba(0,0,0,0.7); color: white; padding: 10px 16px; border-radius: 20px; border: 1px solid #444; font-size: 12px; text-transform: uppercase; font-weight: 600; cursor: pointer; backdrop-filter: blur(4px); }
+        .ctrl:active { background: rgba(50,50,50,0.8); }
+        .ctrl.active { border-color: #00cc00; color: #00cc00; }
     </style>
 </head>
 <body>
@@ -49,47 +67,82 @@ const html = `
 
     <div id="setup">
         <h2>Mirror Stream</h2>
-        <label>RTMP URL</label>
-        <input type="text" id="rtmpUrl" placeholder="rtmp://global.live.mmcdn.com/live-origin/">
+        <p class="subtitle">Stream to Chaturbate with mirrored camera</p>
 
-        <label>BROADCAST TOKEN</label>
-        <input type="text" id="streamKey" placeholder="Your stream key">
+        <div class="form-group">
+            <label>RTMP URL</label>
+            <input type="text" id="rtmpUrl" placeholder="rtmp://global.live.mmcdn.com/live-origin/">
+        </div>
+
+        <div class="form-group">
+            <label>Broadcast Token</label>
+            <input type="text" id="streamKey" placeholder="Your stream key">
+        </div>
+
+        <div class="section-title">Video Settings</div>
+
+        <div class="form-row">
+            <div class="form-group">
+                <label>Orientation</label>
+                <select id="orientation">
+                    <option value="portrait">Portrait</option>
+                    <option value="landscape">Landscape</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Rotation</label>
+                <select id="rotateAngle">
+                    <option value="0">0°</option>
+                    <option value="90">90°</option>
+                    <option value="180">180°</option>
+                    <option value="270">270°</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
+                <input type="checkbox" id="mirrorOutput" checked style="width: auto;">
+                <span style="text-transform: none; font-size: 14px; color: #ccc;">Mirror output stream</span>
+            </label>
+        </div>
 
         <button class="start-btn" onclick="startApp()">GO LIVE</button>
     </div>
 
     <div id="controls">
-        <button class="ctrl" onclick="toggleMirror()">Mirror</button>
-        <button class="ctrl" onclick="location.reload()">Reset</button>
+        <button class="ctrl" id="mirrorBtn" onclick="toggleMirror()">Mirror</button>
+        <button class="ctrl" onclick="toggleSettings()">Settings</button>
+        <button class="ctrl" onclick="stopStream()">Stop</button>
     </div>
 
     <script>
         const socket = io({ transports: ["websocket"], reconnection: true });
         let mediaRecorder;
         let isFromApp = false;
-        let rotationConfig = { orientation: 'portrait', rotate: 'cw', angle: '0', mirror: false };
+        let isStreaming = false;
 
         // Parse URL params (from iOS app)
         const urlParams = new URLSearchParams(window.location.search);
         if (urlParams.has('orientation') || urlParams.has('mirror')) {
             isFromApp = true;
-            rotationConfig.orientation = urlParams.get('orientation') || 'portrait';
-            rotationConfig.rotate = urlParams.get('rotate') || 'cw';
-            rotationConfig.angle = urlParams.get('rotateAngle') || '0';
-            rotationConfig.mirror = urlParams.get('mirror') === '1';
-            console.log('iOS app config:', rotationConfig);
+            document.getElementById('orientation').value = urlParams.get('orientation') || 'portrait';
+            document.getElementById('rotateAngle').value = urlParams.get('rotateAngle') || '0';
+            document.getElementById('mirrorOutput').checked = urlParams.get('mirror') === '1';
+            console.log('Loaded from iOS app');
         }
 
         socket.on('error', (msg) => {
             console.error('Server error:', msg);
             document.getElementById('status-text').innerText = 'ERROR';
+            document.getElementById('live-badge').classList.remove('live');
         });
         socket.on('streaming', () => {
-            document.getElementById('status-text').innerText = 'LIVE (ON AIR)';
+            document.getElementById('status-text').innerText = 'LIVE';
             document.getElementById('live-badge').classList.add('live');
         });
         socket.on('disconnect', () => {
-            document.getElementById('status-text').innerText = "DISCONNECTED";
+            document.getElementById('status-text').innerText = 'DISCONNECTED';
             document.getElementById('live-badge').classList.remove('live');
         });
 
@@ -97,6 +150,9 @@ const html = `
             // Load saved data
             if(localStorage.getItem('rtmpUrl')) document.getElementById('rtmpUrl').value = localStorage.getItem('rtmpUrl');
             if(localStorage.getItem('streamKey')) document.getElementById('streamKey').value = localStorage.getItem('streamKey');
+            if(localStorage.getItem('orientation')) document.getElementById('orientation').value = localStorage.getItem('orientation');
+            if(localStorage.getItem('rotateAngle')) document.getElementById('rotateAngle').value = localStorage.getItem('rotateAngle');
+            if(localStorage.getItem('mirrorOutput') !== null) document.getElementById('mirrorOutput').checked = localStorage.getItem('mirrorOutput') === 'true';
 
             initCam();
 
@@ -129,9 +185,12 @@ const html = `
                 return;
             }
 
-            // Save
+            // Save settings
             localStorage.setItem('rtmpUrl', rtmpUrl);
             localStorage.setItem('streamKey', key);
+            localStorage.setItem('orientation', document.getElementById('orientation').value);
+            localStorage.setItem('rotateAngle', document.getElementById('rotateAngle').value);
+            localStorage.setItem('mirrorOutput', document.getElementById('mirrorOutput').checked);
 
             // Fix URL format
             if (!rtmpUrl.toLowerCase().startsWith('rtmp://')) rtmpUrl = 'rtmp://' + rtmpUrl;
@@ -144,29 +203,35 @@ const html = `
         function startBroadcasting(url, key) {
             const statusText = document.getElementById('status-text');
             const badge = document.getElementById('live-badge');
-            statusText.innerText = "CONNECTING...";
+            statusText.innerText = 'CONNECTING...';
+
+            const rotationConfig = {
+                orientation: document.getElementById('orientation').value,
+                angle: document.getElementById('rotateAngle').value,
+                mirror: document.getElementById('mirrorOutput').checked
+            };
 
             const mime = ["video/mp4", "video/webm;codecs=h264", "video/webm"].find(t => MediaRecorder.isTypeSupported(t)) || "";
             try {
                 mediaRecorder = mime ? new MediaRecorder(window.localStream, { mimeType: mime }) : new MediaRecorder(window.localStream);
             } catch (e) {
-                statusText.innerText = "RECORDER ERROR";
+                statusText.innerText = 'RECORDER ERROR';
                 return;
             }
 
-            // Send config with rotation settings
             socket.emit('config', {
                 target: url + key,
                 format: mime,
                 rotation: rotationConfig
             }, (response) => {
                 if (!response || !response.ok) {
-                    statusText.innerText = "SERVER ERROR";
+                    statusText.innerText = 'SERVER ERROR';
                     return;
                 }
                 mediaRecorder.start(250);
+                isStreaming = true;
                 badge.classList.add('live');
-                statusText.innerText = "LIVE (ON AIR)";
+                statusText.innerText = 'LIVE';
             });
 
             mediaRecorder.ondataavailable = async (e) => {
@@ -176,7 +241,29 @@ const html = `
 
         function toggleMirror() {
             const v = document.querySelector('video');
-            v.style.transform = v.style.transform === 'scaleX(1)' ? 'scaleX(-1)' : 'scaleX(1)';
+            const btn = document.getElementById('mirrorBtn');
+            if (v.style.transform === 'scaleX(1)') {
+                v.style.transform = 'scaleX(-1)';
+                btn.classList.add('active');
+            } else {
+                v.style.transform = 'scaleX(1)';
+                btn.classList.remove('active');
+            }
+        }
+
+        function toggleSettings() {
+            const setup = document.getElementById('setup');
+            setup.classList.toggle('hidden');
+        }
+
+        function stopStream() {
+            if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+                mediaRecorder.stop();
+            }
+            isStreaming = false;
+            document.getElementById('status-text').innerText = 'STOPPED';
+            document.getElementById('live-badge').classList.remove('live');
+            document.getElementById('setup').classList.remove('hidden');
         }
     </script>
 </body>
@@ -207,17 +294,15 @@ io.on('connection', (socket) => {
         let vf = [];
         const rot = data.rotation || {};
         const angle = rot.angle || '0';
-        const direction = rot.rotate || 'cw';
-        const orientation = rot.orientation || 'portrait';
         const mirror = rot.mirror || false;
 
         // Apply rotation based on angle
         if (angle === '90') {
-            vf.push(direction === 'cw' ? 'transpose=1' : 'transpose=2');
+            vf.push('transpose=1');
         } else if (angle === '180') {
             vf.push('transpose=1,transpose=1');
         } else if (angle === '270') {
-            vf.push(direction === 'cw' ? 'transpose=2' : 'transpose=1');
+            vf.push('transpose=2');
         }
 
         // Apply mirror if enabled
@@ -228,7 +313,6 @@ io.on('connection', (socket) => {
         // Build FFmpeg args
         let args;
         if (vf.length > 0) {
-            // Need encoding for filters
             args = [
                 '-loglevel', 'warning',
                 '-fflags', '+genpts+discardcorrupt',
@@ -245,7 +329,6 @@ io.on('connection', (socket) => {
             ];
             console.log('Using filters:', vf.join(','));
         } else {
-            // No filters, just copy
             args = [
                 '-loglevel', 'warning',
                 '-fflags', '+genpts+discardcorrupt',
