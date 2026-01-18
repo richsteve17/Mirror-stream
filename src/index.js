@@ -1,22 +1,8 @@
 import express from 'express';
 import { Server } from 'socket.io';
-import { spawn, execSync } from 'child_process';
+import { spawn } from 'child_process';
+import ffmpegPath from 'ffmpeg-static';
 import http from 'http';
-
-// Detect ffmpeg - prefer system over ffmpeg-static (which crashes on Render)
-let ffmpegPath = 'ffmpeg';
-try {
-    execSync('ffmpeg -version', { stdio: 'ignore' });
-    console.log('Using system ffmpeg');
-} catch {
-    try {
-        const { default: ffmpegStatic } = await import('ffmpeg-static');
-        ffmpegPath = ffmpegStatic;
-        console.log('Using ffmpeg-static:', ffmpegPath);
-    } catch {
-        console.log('No ffmpeg found, will try system ffmpeg');
-    }
-}
 
 const app = express();
 const server = http.createServer(app);
@@ -24,7 +10,8 @@ const server = http.createServer(app);
 const io = new Server(server, {
     transports: ["websocket"],
     maxHttpBufferSize: 1e8,
-    pingTimeout: 60000
+    pingTimeout: 60000,
+    cors: { origin: "*" }
 });
 
 const port = process.env.PORT || 3000;
@@ -39,9 +26,9 @@ const html = `
     <script src="/socket.io/socket.io.js"></script>
     <style>
         body { margin: 0; background: #000; overflow: hidden; height: 100vh; width: 100vw; font-family: sans-serif; }
-        video { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
+        video { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); z-index: 1; }
         #status-bar { position: absolute; top: 0; left: 0; width: 100%; display: flex; justify-content: center; padding-top: 5px; z-index: 50; pointer-events: none; }
-        .badge { background: rgba(0,0,0,0.6); color: #888; border: 1px solid #444; padding: 5px 15px; border-radius: 20px; font-size: 12px; font-weight: bold; display: flex; align-items: center; gap: 8px; }
+        .badge { background: rgba(0,0,0,0.6); color: #888; border: 1px solid #444; padding: 5px 15px; border-radius: 20px; font-size: 12px; font-weight: bold; display: flex; align-items: center; gap: 8px; backdrop-filter: blur(4px); }
         .dot { width: 8px; height: 8px; border-radius: 50%; background: #555; }
         .badge.live { color: #fff; border-color: #f00; background: rgba(200,0,0,0.5); }
         .badge.live .dot { background: #f00; box-shadow: 0 0 8px #f00; }
@@ -77,14 +64,14 @@ const html = `
     </div>
 
     <script>
-        const socket = io({ transports: ["websocket"], reconnection: true, reconnectionAttempts: 10, reconnectionDelay: 1000 });
+        const socket = io({ transports: ["websocket"], reconnection: true });
         let mediaRecorder;
         let isFromApp = false;
         let rotationConfig = { orientation: 'portrait', rotate: 'cw', angle: '0', mirror: false };
 
         // Parse URL params (from iOS app)
         const urlParams = new URLSearchParams(window.location.search);
-        if (urlParams.has('orientation')) {
+        if (urlParams.has('orientation') || urlParams.has('mirror')) {
             isFromApp = true;
             rotationConfig.orientation = urlParams.get('orientation') || 'portrait';
             rotationConfig.rotate = urlParams.get('rotate') || 'cw';
@@ -99,10 +86,10 @@ const html = `
         });
         socket.on('streaming', () => {
             document.getElementById('status-text').innerText = 'LIVE (ON AIR)';
+            document.getElementById('live-badge').classList.add('live');
         });
-        socket.on('disconnect', (reason) => {
-            console.log('Disconnected:', reason);
-            document.getElementById('status-text').innerText = 'DISCONNECTED';
+        socket.on('disconnect', () => {
+            document.getElementById('status-text').innerText = "DISCONNECTED";
             document.getElementById('live-badge').classList.remove('live');
         });
 
@@ -118,11 +105,6 @@ const html = `
                 setTimeout(() => startApp(), 500);
             }
         };
-
-        function pickMimeType() {
-            const candidates = ["video/mp4", "video/webm;codecs=h264", "video/webm"];
-            return candidates.find(t => MediaRecorder.isTypeSupported(t)) || "";
-        }
 
         async function initCam() {
             try {
@@ -164,7 +146,7 @@ const html = `
             const badge = document.getElementById('live-badge');
             statusText.innerText = "CONNECTING...";
 
-            let mime = pickMimeType();
+            const mime = ["video/mp4", "video/webm;codecs=h264", "video/webm"].find(t => MediaRecorder.isTypeSupported(t)) || "";
             try {
                 mediaRecorder = mime ? new MediaRecorder(window.localStream, { mimeType: mime }) : new MediaRecorder(window.localStream);
             } catch (e) {
@@ -188,10 +170,7 @@ const html = `
             });
 
             mediaRecorder.ondataavailable = async (e) => {
-                if (e.data.size > 0) {
-                    const buffer = await e.data.arrayBuffer();
-                    socket.emit('binarystream', buffer);
-                }
+                if (e.data.size > 0) socket.emit('binarystream', await e.data.arrayBuffer());
             };
         }
 
@@ -204,6 +183,7 @@ const html = `
 </html>
 `;
 
+// --- BACKEND ---
 app.get('/', (req, res) => res.send(html));
 
 io.on('connection', (socket) => {
