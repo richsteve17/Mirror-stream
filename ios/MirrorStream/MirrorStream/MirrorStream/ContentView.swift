@@ -5,6 +5,7 @@ struct ContentView: View {
     @State private var isStreaming = false
     @State private var showChat = false
     @State private var showMonitor = false
+    @State private var controlsHidden = false
     @State private var myUsername = ""
     @State private var monitorUsername = ""
     @State private var serverURL = "https://mirror-stream-io.onrender.com"
@@ -13,6 +14,7 @@ struct ContentView: View {
     @State private var orientation = "portrait"
     @State private var rotateAngle = "0"
     @State private var mirrorOutput = true
+    @State private var beautyFilter = false
 
     // The URL used when streaming started (doesn't change mid-stream)
     @State private var activeStreamURL: URL?
@@ -61,51 +63,66 @@ struct ContentView: View {
                 }
             }
 
-            // Controls overlay when streaming
+            // Controls overlay when streaming (top bar with menu + hide)
             if isStreaming {
                 VStack {
-                    Spacer()
-                    HStack(spacing: 20) {
-                        Button(action: { showChat.toggle() }) {
-                            VStack {
-                                Image(systemName: showChat ? "message.fill" : "message")
-                                    .font(.title2)
-                                Text("Chat")
-                                    .font(.caption)
+                    HStack {
+                        if controlsHidden {
+                            Button(action: { controlsHidden = false }) {
+                                Image(systemName: "eye")
+                                    .font(.title3)
+                                    .foregroundColor(.white)
+                                    .padding(10)
+                                    .background(Color.black.opacity(0.6))
+                                    .cornerRadius(10)
                             }
-                            .foregroundColor(.white)
-                            .padding()
-                            .background(Color.black.opacity(0.6))
-                            .cornerRadius(10)
-                        }
+                        } else {
+                            Menu {
+                                Button(showChat ? "Hide Chat" : "Show Chat") {
+                                    showChat.toggle()
+                                }
+                                Button(showMonitor ? "Hide Monitor" : "Show Monitor") {
+                                    showMonitor.toggle()
+                                }
+                                Divider()
+                                Button("Stop Stream", role: .destructive) {
+                                    stopStreaming()
+                                }
+                            } label: {
+                                HStack(spacing: 6) {
+                                    Image(systemName: "ellipsis.circle")
+                                        .font(.title3)
+                                    Text("Menu")
+                                        .font(.caption)
+                                }
+                                .foregroundColor(.white)
+                                .padding(.vertical, 8)
+                                .padding(.horizontal, 12)
+                                .background(Color.black.opacity(0.6))
+                                .cornerRadius(10)
+                            }
 
-                        Button(action: { showMonitor.toggle() }) {
-                            VStack {
-                                Image(systemName: showMonitor ? "tv.fill" : "tv")
-                                    .font(.title2)
-                                Text("Monitor")
-                                    .font(.caption)
-                            }
-                            .foregroundColor(.white)
-                            .padding()
-                            .background(Color.black.opacity(0.6))
-                            .cornerRadius(10)
-                        }
+                            Spacer()
 
-                        Button(action: stopStreaming) {
-                            VStack {
-                                Image(systemName: "xmark.circle")
-                                    .font(.title2)
-                                Text("Stop")
-                                    .font(.caption)
+                            Button(action: { controlsHidden = true }) {
+                                HStack(spacing: 6) {
+                                    Image(systemName: "eye.slash")
+                                        .font(.title3)
+                                    Text("Hide")
+                                        .font(.caption)
+                                }
+                                .foregroundColor(.white)
+                                .padding(.vertical, 8)
+                                .padding(.horizontal, 12)
+                                .background(Color.black.opacity(0.6))
+                                .cornerRadius(10)
                             }
-                            .foregroundColor(.red)
-                            .padding()
-                            .background(Color.black.opacity(0.6))
-                            .cornerRadius(10)
                         }
                     }
-                    .padding(.bottom, 30)
+                    .padding(.top, 12)
+                    .padding(.horizontal, 12)
+
+                    Spacer()
                 }
             }
         }
@@ -149,7 +166,7 @@ struct ContentView: View {
                             Text("Portrait").tag("portrait")
                             Text("Landscape").tag("landscape")
                         }
-                        .pickerStyle(SegmentedPickerStyle())
+                        .pickerStyle(.menu)
                     }
 
                     HStack {
@@ -161,10 +178,13 @@ struct ContentView: View {
                             Text("180°").tag("180")
                             Text("270°").tag("270")
                         }
-                        .pickerStyle(SegmentedPickerStyle())
+                        .pickerStyle(.menu)
                     }
 
                     Toggle("Mirror Output", isOn: $mirrorOutput)
+                        .foregroundColor(.gray)
+
+                    Toggle("Beauty Filter", isOn: $beautyFilter)
                         .foregroundColor(.gray)
                 }
                 .padding()
@@ -231,7 +251,8 @@ struct ContentView: View {
         let params = [
             "orientation=\(orientation)",
             "rotateAngle=\(rotateAngle)",
-            "mirror=\(mirrorOutput ? "1" : "0")"
+            "mirror=\(mirrorOutput ? "1" : "0")",
+            "beauty=\(beautyFilter ? "1" : "0")"
         ].joined(separator: "&")
 
         urlString += "?\(params)"
@@ -256,6 +277,7 @@ struct ContentView: View {
         UserDefaults.standard.set(orientation, forKey: "orientation")
         UserDefaults.standard.set(rotateAngle, forKey: "rotateAngle")
         UserDefaults.standard.set(mirrorOutput, forKey: "mirrorOutput")
+        UserDefaults.standard.set(beautyFilter, forKey: "beautyFilter")
     }
 
     func loadSettings() {
@@ -265,6 +287,7 @@ struct ContentView: View {
         orientation = UserDefaults.standard.string(forKey: "orientation") ?? "portrait"
         rotateAngle = UserDefaults.standard.string(forKey: "rotateAngle") ?? "0"
         mirrorOutput = UserDefaults.standard.bool(forKey: "mirrorOutput")
+        beautyFilter = UserDefaults.standard.bool(forKey: "beautyFilter")
         // Default mirror to true if not set
         if !UserDefaults.standard.dictionaryRepresentation().keys.contains("mirrorOutput") {
             mirrorOutput = true
