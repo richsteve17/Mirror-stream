@@ -22,8 +22,8 @@ const app = express();
 const server = http.createServer(app);
 
 const io = new Server(server, {
-    transports: ["websocket"], 
-    maxHttpBufferSize: 1e8, 
+    transports: ["websocket"],
+    maxHttpBufferSize: 1e8,
     pingTimeout: 60000
 });
 
@@ -35,7 +35,7 @@ const html = `
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Stream Relay Auto-Save</title>
+    <title>Mirror Stream</title>
     <script src="/socket.io/socket.io.js"></script>
     <style>
         body { margin: 0; background: #000; overflow: hidden; height: 100vh; width: 100vw; font-family: sans-serif; }
@@ -45,27 +45,15 @@ const html = `
         .dot { width: 8px; height: 8px; border-radius: 50%; background: #555; }
         .badge.live { color: #fff; border-color: #f00; background: rgba(200,0,0,0.5); }
         .badge.live .dot { background: #f00; box-shadow: 0 0 8px #f00; }
-        .overlay-box { position: absolute; background: #222; border: 1px solid #444; z-index: 100; overflow: hidden; display: none; flex-direction: column; box-shadow: 0 4px 10px rgba(0,0,0,0.5); }
-        .drag-handle { width: 100%; height: 28px; background: rgba(0,0,0,0.85); cursor: move; display: flex; align-items: center; justify-content: space-between; padding: 0 5px; box-sizing: border-box; }
-        .handle-title { color: #aaa; font-size: 10px; font-weight: bold; text-transform: uppercase; letter-spacing: 1px; }
-        .win-ctrls { display: flex; gap: 5px; }
-        .win-btn { width: 12px; height: 12px; border-radius: 50%; border: none; cursor: pointer; }
-        .btn-min { background: #fc0; }
-        .btn-max { background: #0f0; }
-        .btn-close { background: #f00; }
-        iframe { flex-grow: 1; border: none; width: 100%; background: #000; }
-        
-        #setup { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.92); z-index: 300; display: flex; flex-direction: column; align-items: center; justify-content: center; color: white; }
-        input { padding: 12px; margin: 8px; font-size: 16px; width: 80%; max-width: 300px; border-radius: 5px; border: none; }
+
+        #setup { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.95); z-index: 300; display: flex; flex-direction: column; align-items: center; justify-content: center; color: white; overflow-y: auto; }
+        #setup.hidden { display: none; }
+        input[type="text"] { padding: 12px; margin: 8px; font-size: 16px; width: 80%; max-width: 300px; border-radius: 5px; border: none; }
         label { color: #aaa; font-size: 12px; margin-top: 15px; }
         button.start-btn { margin-top: 20px; padding: 15px 40px; font-size: 18px; background: #0f0; border: none; font-weight: bold; border-radius: 5px; }
-        
+
         #controls { position: absolute; bottom: 20px; width: 100%; display: flex; justify-content: center; gap: 10px; z-index: 200; pointer-events: none; }
         .ctrl { pointer-events: auto; background: rgba(0,0,0,0.6); color: white; padding: 8px 12px; border-radius: 15px; border: 1px solid #666; font-size: 12px; text-transform: uppercase; }
-
-        /* Default Sizes */
-        #watch-box { top: 60px; right: 10px; width: 45vw; height: 30vh; }
-        #chat-box { bottom: 90px; left: 10px; width: 45vw; height: 40vh; border: 1px solid #0f0; }
     </style>
 </head>
 <body>
@@ -73,63 +61,62 @@ const html = `
     <div id="status-bar"><div class="badge" id="live-badge"><div class="dot"></div> <span id="status-text">READY</span></div></div>
 
     <div id="setup">
-        <h2>Easy Setup</h2>
-        <label>RTMP URL (Paste once, I'll remember)</label>
-        <input id="rtmpUrl" placeholder="global.live.mmcdn...">
+        <h2>Mirror Stream</h2>
+        <label>RTMP URL</label>
+        <input type="text" id="rtmpUrl" placeholder="rtmp://global.live.mmcdn.com/live-origin/">
 
-        <label>BROADCAST TOKEN (Key)</label>
-        <input id="streamKey" placeholder="Paste Token Here">
-
-        <label>YOUR USERNAME</label>
-        <input id="myUser" placeholder="richsteve17">
-
-        <label>MONITOR USERNAME</label>
-        <input id="watchUser" placeholder="Other model">
-
-        <div style="margin-top:15px;display:flex;align-items:center;gap:10px;">
-            <input type="checkbox" id="portraitMode" style="width:20px;height:20px;margin:0;">
-            <label for="portraitMode" style="margin:0;color:#0f0;">PORTRAIT MODE (rotate for landscape stream)</label>
-        </div>
+        <label>BROADCAST TOKEN</label>
+        <input type="text" id="streamKey" placeholder="Your stream key">
 
         <button class="start-btn" onclick="startApp()">GO LIVE</button>
     </div>
 
-    <div id="watch-box" class="overlay-box"><div class="drag-handle" data-target="watch-box"><span class="handle-title">Monitor</span><div class="win-ctrls"><button class="win-btn btn-min" onclick="resizeBox('watch-box', 'small')"></button><button class="win-btn btn-max" onclick="resizeBox('watch-box', 'large')"></button><button class="win-btn btn-close" onclick="closeBox('watch-box')"></button></div></div><iframe id="watch-frame" sandbox="allow-scripts allow-same-origin allow-popups allow-forms" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen referrerpolicy="no-referrer"></iframe></div>
-    <div id="chat-box" class="overlay-box"><div class="drag-handle" data-target="chat-box"><span class="handle-title">My Chat</span><div class="win-ctrls"><button class="win-btn btn-min" onclick="resizeBox('chat-box', 'small')"></button><button class="win-btn btn-max" onclick="resizeBox('chat-box', 'large')"></button></div></div><iframe id="chat-frame" sandbox="allow-scripts allow-same-origin allow-popups allow-forms" referrerpolicy="no-referrer"></iframe></div>
-    <div id="controls"><button class="ctrl" onclick="toggleCam()">Flip Cam</button><button class="ctrl" onclick="toggleOpacity()">Ghost Mode</button><button class="ctrl" onclick="location.reload()">Reset</button></div>
+    <div id="controls">
+        <button class="ctrl" onclick="toggleMirror()">Mirror</button>
+        <button class="ctrl" onclick="location.reload()">Reset</button>
+    </div>
 
     <script>
         const socket = io({ transports: ["websocket"], reconnection: true, reconnectionAttempts: 10, reconnectionDelay: 1000 });
         let mediaRecorder;
+        let isFromApp = false;
+        let rotationConfig = { orientation: 'portrait', rotate: 'cw', angle: '0', mirror: false };
 
-        // --- SOCKET ERROR HANDLING ---
+        // Parse URL params (from iOS app)
+        const urlParams = new URLSearchParams(window.location.search);
+        if (urlParams.has('orientation')) {
+            isFromApp = true;
+            rotationConfig.orientation = urlParams.get('orientation') || 'portrait';
+            rotationConfig.rotate = urlParams.get('rotate') || 'cw';
+            rotationConfig.angle = urlParams.get('rotateAngle') || '0';
+            rotationConfig.mirror = urlParams.get('mirror') === '1';
+            console.log('iOS app config:', rotationConfig);
+        }
+
         socket.on('error', (msg) => {
             console.error('Server error:', msg);
-            document.getElementById('status-text').innerText = 'ERROR: ' + msg;
-            document.getElementById('live-badge').classList.remove('live');
-            document.getElementById('live-badge').style.borderColor = '#f80';
+            document.getElementById('status-text').innerText = 'ERROR';
         });
         socket.on('streaming', () => {
-            document.getElementById('status-text').innerText = 'STREAMING';
+            document.getElementById('status-text').innerText = 'LIVE (ON AIR)';
         });
         socket.on('disconnect', (reason) => {
             console.log('Disconnected:', reason);
             document.getElementById('status-text').innerText = 'DISCONNECTED';
             document.getElementById('live-badge').classList.remove('live');
         });
-        socket.on('reconnect', () => {
-            console.log('Reconnected');
-            document.getElementById('status-text').innerText = 'RECONNECTED';
-        });
 
-        // --- AUTO-LOAD SAVED DATA ---
         window.onload = () => {
+            // Load saved data
             if(localStorage.getItem('rtmpUrl')) document.getElementById('rtmpUrl').value = localStorage.getItem('rtmpUrl');
             if(localStorage.getItem('streamKey')) document.getElementById('streamKey').value = localStorage.getItem('streamKey');
-            if(localStorage.getItem('myUser')) document.getElementById('myUser').value = localStorage.getItem('myUser');
-            if(localStorage.getItem('watchUser')) document.getElementById('watchUser').value = localStorage.getItem('watchUser');
-            if(localStorage.getItem('portraitMode') === 'true') document.getElementById('portraitMode').checked = true;
+
             initCam();
+
+            // If loaded from iOS app with saved credentials, auto-start
+            if (isFromApp && localStorage.getItem('rtmpUrl') && localStorage.getItem('streamKey')) {
+                setTimeout(() => startApp(), 500);
+            }
         };
 
         function pickMimeType() {
@@ -139,56 +126,63 @@ const html = `
 
         async function initCam() {
             try {
-                const stream = await navigator.mediaDevices.getUserMedia({ 
-                    video: { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: 30 }, 
-                    audio: true 
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    video: { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: 30 },
+                    audio: true
                 });
                 document.querySelector('video').srcObject = stream;
                 window.localStream = stream;
-            } catch(e) { alert("Camera Error: " + e.message); }
+            } catch(e) {
+                document.getElementById('status-text').innerText = 'CAM ERROR';
+                console.error("Camera Error:", e.message);
+            }
         }
 
         function startApp() {
             let rtmpUrl = document.getElementById('rtmpUrl').value.trim();
             const key = document.getElementById('streamKey').value.trim();
-            const myUser = document.getElementById('myUser').value.trim();
-            const watchUser = document.getElementById('watchUser').value.trim();
-            const portraitMode = document.getElementById('portraitMode').checked;
 
-            // --- AUTO-SAVE DATA ---
+            if (!rtmpUrl || !key) {
+                alert('Enter RTMP URL and stream key');
+                return;
+            }
+
+            // Save
             localStorage.setItem('rtmpUrl', rtmpUrl);
             localStorage.setItem('streamKey', key);
-            localStorage.setItem('myUser', myUser);
-            localStorage.setItem('watchUser', watchUser);
-            localStorage.setItem('portraitMode', portraitMode);
 
-            // --- SMART URL FIXER ---
+            // Fix URL format
             if (!rtmpUrl.toLowerCase().startsWith('rtmp://')) rtmpUrl = 'rtmp://' + rtmpUrl;
-            if (rtmpUrl.startsWith('RTMP://') || rtmpUrl.startsWith('Rtmp://')) rtmpUrl = 'rtmp://' + rtmpUrl.substring(7);
             if (!rtmpUrl.endsWith('/')) rtmpUrl += '/';
 
-            // Chaturbate blocks all embedding via Cloudflare - hide broken overlays
-            document.getElementById('watch-box').style.display = 'none';
-            document.getElementById('chat-box').style.display = 'none';
-            
-            document.getElementById('setup').style.display = 'none';
-            if (key && rtmpUrl) startBroadcasting(rtmpUrl, key);
+            document.getElementById('setup').classList.add('hidden');
+            startBroadcasting(rtmpUrl, key);
         }
 
         function startBroadcasting(url, key) {
             const statusText = document.getElementById('status-text');
             const badge = document.getElementById('live-badge');
-            statusText.innerText = "INITIALIZING...";
+            statusText.innerText = "CONNECTING...";
 
             let mime = pickMimeType();
             try {
                 mediaRecorder = mime ? new MediaRecorder(window.localStream, { mimeType: mime }) : new MediaRecorder(window.localStream);
-            } catch (e) { alert("Recorder Error: " + e.message); return; }
+            } catch (e) {
+                statusText.innerText = "RECORDER ERROR";
+                return;
+            }
 
-            const portrait = document.getElementById('portraitMode').checked;
-            socket.emit('config', { target: url + key, format: mime, portrait: portrait }, (response) => {
-                if (!response || !response.ok) { alert("Server Error"); return; }
-                mediaRecorder.start(250); 
+            // Send config with rotation settings
+            socket.emit('config', {
+                target: url + key,
+                format: mime,
+                rotation: rotationConfig
+            }, (response) => {
+                if (!response || !response.ok) {
+                    statusText.innerText = "SERVER ERROR";
+                    return;
+                }
+                mediaRecorder.start(250);
                 badge.classList.add('live');
                 statusText.innerText = "LIVE (ON AIR)";
             });
@@ -201,12 +195,10 @@ const html = `
             };
         }
 
-        function toggleCam() { const v = document.querySelector('video'); v.style.transform = v.style.transform === 'scaleX(1)' ? 'scaleX(-1)' : 'scaleX(1)'; }
-        function resizeBox(id, size) { const el = document.getElementById(id); if(size === 'small') { el.style.width = '150px'; el.style.height = '120px'; } if(size === 'large') { el.style.width = '90vw'; el.style.height = '60vh'; } }
-        function closeBox(id) { document.getElementById(id).style.display = 'none'; }
-        let ghost = false;
-        function toggleOpacity() { ghost = !ghost; document.querySelectorAll('.overlay-box').forEach(el => el.style.opacity = ghost ? '0.3' : '1'); }
-        document.querySelectorAll('.drag-handle').forEach(handle => { handle.addEventListener('touchmove', (e) => { e.preventDefault(); const box = document.getElementById(handle.dataset.target); const t = e.targetTouches[0]; box.style.left = (t.pageX - 50) + 'px'; box.style.top = (t.pageY - 10) + 'px'; }); });
+        function toggleMirror() {
+            const v = document.querySelector('video');
+            v.style.transform = v.style.transform === 'scaleX(1)' ? 'scaleX(-1)' : 'scaleX(1)';
+        }
     </script>
 </body>
 </html>
@@ -214,47 +206,10 @@ const html = `
 
 app.get('/', (req, res) => res.send(html));
 
-// Proxy endpoint to bypass X-Frame-Options
-app.get('/proxy', async (req, res) => {
-    const url = req.query.url;
-    if (!url || !url.includes('chaturbate.com')) {
-        return res.status(400).send('Invalid URL');
-    }
-
-    try {
-        const response = await fetch(url, {
-            headers: {
-                'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1'
-            }
-        });
-
-        let html = await response.text();
-
-        // Rewrite relative URLs to absolute
-        html = html.replace(/href="\//g, 'href="https://chaturbate.com/');
-        html = html.replace(/src="\//g, 'src="https://chaturbate.com/');
-
-        // Remove frame-busting scripts
-        html = html.replace(/if\s*\(\s*top\s*!==?\s*self\s*\)/g, 'if(false)');
-        html = html.replace(/if\s*\(\s*window\.top\s*!==?\s*window\.self\s*\)/g, 'if(false)');
-
-        res.set({
-            'Content-Type': 'text/html',
-            'X-Frame-Options': 'ALLOWALL',
-            'Content-Security-Policy': ''
-        });
-        res.send(html);
-    } catch (e) {
-        console.error('Proxy error:', e);
-        res.status(500).send('Proxy error: ' + e.message);
-    }
-});
-
 io.on('connection', (socket) => {
     let ffmpeg;
     let isReady = false;
     let dataReceived = 0;
-    let lastDataTime = Date.now();
 
     console.log('Client connected:', socket.id);
 
@@ -266,16 +221,39 @@ io.on('connection', (socket) => {
         console.log('=== NEW STREAM ===');
         console.log('Target:', data.target);
         console.log('Format:', data.format);
-        console.log('Portrait mode:', data.portrait);
+        console.log('Rotation config:', data.rotation);
 
-        // Build FFmpeg args - if portrait mode, we need to rotate (requires encoding)
+        // Build video filter based on rotation config
+        let vf = [];
+        const rot = data.rotation || {};
+        const angle = rot.angle || '0';
+        const direction = rot.rotate || 'cw';
+        const orientation = rot.orientation || 'portrait';
+        const mirror = rot.mirror || false;
+
+        // Apply rotation based on angle
+        if (angle === '90') {
+            vf.push(direction === 'cw' ? 'transpose=1' : 'transpose=2');
+        } else if (angle === '180') {
+            vf.push('transpose=1,transpose=1');
+        } else if (angle === '270') {
+            vf.push(direction === 'cw' ? 'transpose=2' : 'transpose=1');
+        }
+
+        // Apply mirror if enabled
+        if (mirror) {
+            vf.push('hflip');
+        }
+
+        // Build FFmpeg args
         let args;
-        if (data.portrait) {
+        if (vf.length > 0) {
+            // Need encoding for filters
             args = [
-                '-loglevel', 'verbose',
+                '-loglevel', 'warning',
                 '-fflags', '+genpts+discardcorrupt',
                 '-i', '-',
-                '-vf', 'transpose=1',
+                '-vf', vf.join(','),
                 '-c:v', 'libx264',
                 '-preset', 'ultrafast',
                 '-tune', 'zerolatency',
@@ -285,9 +263,11 @@ io.on('connection', (socket) => {
                 '-f', 'flv',
                 data.target
             ];
+            console.log('Using filters:', vf.join(','));
         } else {
+            // No filters, just copy
             args = [
-                '-loglevel', 'verbose',
+                '-loglevel', 'warning',
                 '-fflags', '+genpts+discardcorrupt',
                 '-i', '-',
                 '-c:v', 'copy',
@@ -295,6 +275,7 @@ io.on('connection', (socket) => {
                 '-f', 'flv',
                 data.target
             ];
+            console.log('No filters, using copy');
         }
 
         try {
@@ -303,54 +284,47 @@ io.on('connection', (socket) => {
             ffmpeg.stderr.on('data', (d) => {
                 const msg = d.toString();
                 console.log(msg);
-                // Notify client of RTMP errors
                 if (msg.includes('Connection refused') || msg.includes('Failed to connect')) {
-                    socket.emit('error', 'RTMP connection failed - check your stream key');
+                    socket.emit('error', 'RTMP connection failed');
                 }
                 if (msg.includes('frame=')) {
-                    // Stream is actually working
                     socket.emit('streaming', true);
                 }
             });
 
             ffmpeg.on('close', (code, signal) => {
                 console.log('FFmpeg closed - code:', code, 'signal:', signal);
-                console.log('Total data received:', dataReceived, 'bytes');
                 isReady = false;
-                socket.emit('error', 'Stream ended - FFmpeg exited');
+                socket.emit('error', 'Stream ended');
             });
 
             ffmpeg.on('error', (e) => {
                 console.log('FFmpeg error:', e.message);
-                socket.emit('error', 'FFmpeg error: ' + e.message);
+                socket.emit('error', 'FFmpeg error');
             });
 
-            ffmpeg.stdin.on('error', (e) => {
-                console.log('stdin error:', e.message);
-            });
+            ffmpeg.stdin.on('error', () => {});
 
             isReady = true;
             if (ack) ack({ ok: true });
 
         } catch (e) {
             console.error("Spawn Error:", e);
-            if(ack) ack({ ok: false, error: e.message });
+            if(ack) ack({ ok: false });
         }
     });
 
     socket.on('binarystream', (data) => {
         if (isReady && ffmpeg && ffmpeg.stdin.writable) {
             dataReceived += data.byteLength;
-            lastDataTime = Date.now();
             ffmpeg.stdin.write(Buffer.from(data));
         }
     });
 
     socket.on('disconnect', (reason) => {
-        console.log('Client disconnected:', reason);
-        console.log('Total data received before disconnect:', dataReceived, 'bytes');
+        console.log('Client disconnected:', reason, '- received:', dataReceived, 'bytes');
         if (ffmpeg) ffmpeg.kill();
     });
 });
 
-server.listen(port, () => console.log('Relay Auto-Save running on ' + port));
+server.listen(port, () => console.log('Mirror Stream running on port ' + port));
