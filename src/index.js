@@ -107,6 +107,13 @@ const html = `
             </label>
         </div>
 
+        <div class="form-group">
+            <label style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
+                <input type="checkbox" id="beautyFilter" style="width: auto;">
+                <span style="text-transform: none; font-size: 14px; color: #ccc;">Beauty filter</span>
+            </label>
+        </div>
+
         <button class="start-btn" onclick="startApp()">GO LIVE</button>
     </div>
 
@@ -124,11 +131,12 @@ const html = `
 
         // Parse URL params (from iOS app)
         const urlParams = new URLSearchParams(window.location.search);
-        if (urlParams.has('orientation') || urlParams.has('mirror')) {
+        if (urlParams.has('orientation') || urlParams.has('mirror') || urlParams.has('beauty')) {
             isFromApp = true;
             document.getElementById('orientation').value = urlParams.get('orientation') || 'portrait';
             document.getElementById('rotateAngle').value = urlParams.get('rotateAngle') || '0';
             document.getElementById('mirrorOutput').checked = urlParams.get('mirror') === '1';
+            document.getElementById('beautyFilter').checked = urlParams.get('beauty') === '1';
             console.log('Loaded from iOS app');
         }
 
@@ -153,12 +161,18 @@ const html = `
             if(localStorage.getItem('orientation')) document.getElementById('orientation').value = localStorage.getItem('orientation');
             if(localStorage.getItem('rotateAngle')) document.getElementById('rotateAngle').value = localStorage.getItem('rotateAngle');
             if(localStorage.getItem('mirrorOutput') !== null) document.getElementById('mirrorOutput').checked = localStorage.getItem('mirrorOutput') === 'true';
+            if(localStorage.getItem('beautyFilter') !== null) document.getElementById('beautyFilter').checked = localStorage.getItem('beautyFilter') === 'true';
 
             initCam();
 
             // If loaded from iOS app with saved credentials, auto-start
             if (isFromApp && localStorage.getItem('rtmpUrl') && localStorage.getItem('streamKey')) {
                 setTimeout(() => startApp(), 500);
+            }
+
+            // Hide web controls when embedded in iOS app
+            if (isFromApp) {
+                document.getElementById('controls').style.display = 'none';
             }
         };
 
@@ -191,6 +205,7 @@ const html = `
             localStorage.setItem('orientation', document.getElementById('orientation').value);
             localStorage.setItem('rotateAngle', document.getElementById('rotateAngle').value);
             localStorage.setItem('mirrorOutput', document.getElementById('mirrorOutput').checked);
+            localStorage.setItem('beautyFilter', document.getElementById('beautyFilter').checked);
 
             // Fix URL format
             if (!rtmpUrl.toLowerCase().startsWith('rtmp://')) rtmpUrl = 'rtmp://' + rtmpUrl;
@@ -208,7 +223,8 @@ const html = `
             const rotationConfig = {
                 orientation: document.getElementById('orientation').value,
                 angle: document.getElementById('rotateAngle').value,
-                mirror: document.getElementById('mirrorOutput').checked
+                mirror: document.getElementById('mirrorOutput').checked,
+                beauty: document.getElementById('beautyFilter').checked
             };
 
             const mime = ["video/mp4", "video/webm;codecs=h264", "video/webm"].find(t => MediaRecorder.isTypeSupported(t)) || "";
@@ -295,6 +311,7 @@ io.on('connection', (socket) => {
         const rot = data.rotation || {};
         const angle = rot.angle || '0';
         const mirror = rot.mirror || false;
+        const beauty = rot.beauty || false;
 
         // Apply rotation based on angle
         if (angle === '90') {
@@ -310,36 +327,35 @@ io.on('connection', (socket) => {
             vf.push('hflip');
         }
 
-        // Build FFmpeg args
-        let args;
-        if (vf.length > 0) {
-            args = [
-                '-loglevel', 'warning',
-                '-fflags', '+genpts+discardcorrupt',
-                '-i', '-',
-                '-vf', vf.join(','),
-                '-c:v', 'libx264',
-                '-preset', 'ultrafast',
-                '-tune', 'zerolatency',
-                '-b:v', '2500k',
-                '-c:a', 'aac',
-                '-b:a', '128k',
-                '-f', 'flv',
-                data.target
-            ];
-            console.log('Using filters:', vf.join(','));
-        } else {
-            args = [
-                '-loglevel', 'warning',
-                '-fflags', '+genpts+discardcorrupt',
-                '-i', '-',
-                '-c:v', 'copy',
-                '-c:a', 'copy',
-                '-f', 'flv',
-                data.target
-            ];
-            console.log('No filters, using copy');
+        if (beauty) {
+            vf.push('hqdn3d=1.5:1.5:6:6');
+            vf.push('eq=contrast=1.03:brightness=0.02:saturation=1.08');
         }
+
+        const filterArgs = vf.length ? ['-vf', vf.join(',')] : [];
+
+        const args = [
+            '-loglevel', 'warning',
+            '-fflags', '+genpts+discardcorrupt',
+            '-use_wallclock_as_timestamps', '1',
+            '-i', '-',
+            ...filterArgs,
+            '-c:v', 'libx264',
+            '-preset', 'veryfast',
+            '-tune', 'zerolatency',
+            '-pix_fmt', 'yuv420p',
+            '-g', '60',
+            '-keyint_min', '60',
+            '-b:v', '2500k',
+            '-c:a', 'aac',
+            '-b:a', '128k',
+            '-ar', '44100',
+            '-ac', '1',
+            '-metadata:s:v:0', 'rotate=0',
+            '-f', 'flv',
+            data.target
+        ];
+        console.log('Using filters:', vf.join(','));
 
         try {
             ffmpeg = spawn(ffmpegPath, args);
