@@ -154,6 +154,8 @@ const html = `
             document.getElementById('live-badge').classList.remove('live');
         });
 
+        let camPromise;
+
         window.onload = () => {
             // Load saved data
             if(localStorage.getItem('rtmpUrl')) document.getElementById('rtmpUrl').value = localStorage.getItem('rtmpUrl');
@@ -167,7 +169,7 @@ const html = `
 
             // If loaded from iOS app with saved credentials, auto-start
             if (isFromApp && localStorage.getItem('rtmpUrl') && localStorage.getItem('streamKey')) {
-                setTimeout(() => startApp(), 500);
+                setTimeout(() => startApp(true), 500);
             }
 
             // Hide web controls when embedded in iOS app
@@ -176,26 +178,32 @@ const html = `
             }
         };
 
-        async function initCam() {
-            try {
-                const stream = await navigator.mediaDevices.getUserMedia({
-                    video: { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: 30 },
-                    audio: true
-                });
-                document.querySelector('video').srcObject = stream;
-                window.localStream = stream;
-            } catch(e) {
-                document.getElementById('status-text').innerText = 'CAM ERROR';
-                console.error("Camera Error:", e.message);
-            }
+        function initCam() {
+            if (camPromise) return camPromise;
+            camPromise = (async () => {
+                try {
+                    const stream = await navigator.mediaDevices.getUserMedia({
+                        video: { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: 30 },
+                        audio: true
+                    });
+                    document.querySelector('video').srcObject = stream;
+                    window.localStream = stream;
+                    return stream;
+                } catch(e) {
+                    document.getElementById('status-text').innerText = 'CAM ERROR';
+                    console.error("Camera Error:", e.message);
+                    throw e;
+                }
+            })();
+            return camPromise;
         }
 
-        function startApp() {
+        function startApp(autoStart = false) {
             let rtmpUrl = document.getElementById('rtmpUrl').value.trim();
             const key = document.getElementById('streamKey').value.trim();
 
             if (!rtmpUrl || !key) {
-                alert('Enter RTMP URL and stream key');
+                if (!autoStart) alert('Enter RTMP URL and stream key');
                 return;
             }
 
@@ -212,7 +220,15 @@ const html = `
             if (!rtmpUrl.endsWith('/')) rtmpUrl += '/';
 
             document.getElementById('setup').classList.add('hidden');
-            startBroadcasting(rtmpUrl, key);
+            const start = () => startBroadcasting(rtmpUrl, key);
+            if (!window.localStream) {
+                document.getElementById('status-text').innerText = 'CAM STARTING...';
+                initCam().then(start).catch(() => {
+                    document.getElementById('status-text').innerText = 'CAM ERROR';
+                });
+                return;
+            }
+            start();
         }
 
         function startBroadcasting(url, key) {
@@ -232,6 +248,7 @@ const html = `
                 mediaRecorder = mime ? new MediaRecorder(window.localStream, { mimeType: mime }) : new MediaRecorder(window.localStream);
             } catch (e) {
                 statusText.innerText = 'RECORDER ERROR';
+                console.error('Recorder Error:', e.message);
                 return;
             }
 
