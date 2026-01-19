@@ -154,8 +154,6 @@ const html = `
             document.getElementById('live-badge').classList.remove('live');
         });
 
-        let camPromise;
-
         window.onload = () => {
             // Load saved data
             if(localStorage.getItem('rtmpUrl')) document.getElementById('rtmpUrl').value = localStorage.getItem('rtmpUrl');
@@ -167,43 +165,38 @@ const html = `
 
             initCam();
 
-            // If loaded from iOS app with saved credentials, auto-start
-            if (isFromApp && localStorage.getItem('rtmpUrl') && localStorage.getItem('streamKey')) {
-                setTimeout(() => startApp(true), 500);
-            }
-
             // Hide web controls when embedded in iOS app
             if (isFromApp) {
                 document.getElementById('controls').style.display = 'none';
             }
         };
 
-        function initCam() {
-            if (camPromise) return camPromise;
-            camPromise = (async () => {
-                try {
-                    const stream = await navigator.mediaDevices.getUserMedia({
-                        video: { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: 30 },
-                        audio: true
-                    });
-                    document.querySelector('video').srcObject = stream;
-                    window.localStream = stream;
-                    return stream;
-                } catch(e) {
-                    document.getElementById('status-text').innerText = 'CAM ERROR';
-                    console.error("Camera Error:", e.message);
-                    throw e;
+        async function initCam() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    video: { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: 30 },
+                    audio: true
+                });
+                document.querySelector('video').srcObject = stream;
+                window.localStream = stream;
+                console.log('Camera initialized successfully');
+                // Now that camera is ready, try auto-start if from iOS app
+                if (isFromApp && localStorage.getItem('rtmpUrl') && localStorage.getItem('streamKey')) {
+                    console.log('Auto-starting from iOS app...');
+                    startApp();
                 }
-            })();
-            return camPromise;
+            } catch(e) {
+                document.getElementById('status-text').innerText = 'CAM ERROR';
+                console.error("Camera Error:", e.message);
+            }
         }
 
-        function startApp(autoStart = false) {
+        function startApp() {
             let rtmpUrl = document.getElementById('rtmpUrl').value.trim();
             const key = document.getElementById('streamKey').value.trim();
 
             if (!rtmpUrl || !key) {
-                if (!autoStart) alert('Enter RTMP URL and stream key');
+                alert('Enter RTMP URL and stream key');
                 return;
             }
 
@@ -220,15 +213,7 @@ const html = `
             if (!rtmpUrl.endsWith('/')) rtmpUrl += '/';
 
             document.getElementById('setup').classList.add('hidden');
-            const start = () => startBroadcasting(rtmpUrl, key);
-            if (!window.localStream) {
-                document.getElementById('status-text').innerText = 'CAM STARTING...';
-                initCam().then(start).catch(() => {
-                    document.getElementById('status-text').innerText = 'CAM ERROR';
-                });
-                return;
-            }
-            start();
+            startBroadcasting(rtmpUrl, key);
         }
 
         function startBroadcasting(url, key) {
@@ -245,23 +230,9 @@ const html = `
 
             const mime = ["video/mp4", "video/webm;codecs=h264", "video/webm"].find(t => MediaRecorder.isTypeSupported(t)) || "";
             try {
-                if (!window.localStream) {
-                    throw new Error('Camera stream not ready');
-                }
-                if (mime) {
-                    try {
-                        mediaRecorder = new MediaRecorder(window.localStream, { mimeType: mime });
-                    } catch (e) {
-                        console.warn('MediaRecorder failed with mime type, retrying without mime:', e.message);
-                        mediaRecorder = new MediaRecorder(window.localStream);
-                    }
-                } else {
-                    mediaRecorder = new MediaRecorder(window.localStream);
-                }
+                mediaRecorder = mime ? new MediaRecorder(window.localStream, { mimeType: mime }) : new MediaRecorder(window.localStream);
             } catch (e) {
                 statusText.innerText = 'RECORDER ERROR';
-                console.error('Recorder Error:', e.message);
-                alert('Recorder error: ' + e.message);
                 return;
             }
 
