@@ -165,11 +165,6 @@ const html = `
 
             initCam();
 
-            // If loaded from iOS app with saved credentials, auto-start
-            if (isFromApp && localStorage.getItem('rtmpUrl') && localStorage.getItem('streamKey')) {
-                setTimeout(() => startApp(), 500);
-            }
-
             // Hide web controls when embedded in iOS app
             if (isFromApp) {
                 document.getElementById('controls').style.display = 'none';
@@ -184,6 +179,12 @@ const html = `
                 });
                 document.querySelector('video').srcObject = stream;
                 window.localStream = stream;
+                console.log('Camera initialized successfully');
+                // Now that camera is ready, try auto-start if from iOS app
+                if (isFromApp && localStorage.getItem('rtmpUrl') && localStorage.getItem('streamKey')) {
+                    console.log('Auto-starting from iOS app...');
+                    startApp();
+                }
             } catch(e) {
                 document.getElementById('status-text').innerText = 'CAM ERROR';
                 console.error("Camera Error:", e.message);
