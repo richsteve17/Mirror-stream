@@ -245,10 +245,23 @@ const html = `
 
             const mime = ["video/mp4", "video/webm;codecs=h264", "video/webm"].find(t => MediaRecorder.isTypeSupported(t)) || "";
             try {
-                mediaRecorder = mime ? new MediaRecorder(window.localStream, { mimeType: mime }) : new MediaRecorder(window.localStream);
+                if (!window.localStream) {
+                    throw new Error('Camera stream not ready');
+                }
+                if (mime) {
+                    try {
+                        mediaRecorder = new MediaRecorder(window.localStream, { mimeType: mime });
+                    } catch (e) {
+                        console.warn('MediaRecorder failed with mime type, retrying without mime:', e.message);
+                        mediaRecorder = new MediaRecorder(window.localStream);
+                    }
+                } else {
+                    mediaRecorder = new MediaRecorder(window.localStream);
+                }
             } catch (e) {
                 statusText.innerText = 'RECORDER ERROR';
                 console.error('Recorder Error:', e.message);
+                alert('Recorder error: ' + e.message);
                 return;
             }
 
